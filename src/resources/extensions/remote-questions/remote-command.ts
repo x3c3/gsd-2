@@ -6,6 +6,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { CURSOR_MARKER, Editor, type EditorTheme, Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -288,6 +289,28 @@ async function handleRemoteMenu(ctx: ExtensionCommandContext): Promise<void> {
 
 // ─── Input helpers ───────────────────────────────────────────────────────────
 
+function maskEditorLine(line: string): string {
+  let output = "";
+  let i = 0;
+  while (i < line.length) {
+    if (line.startsWith(CURSOR_MARKER, i)) {
+      output += CURSOR_MARKER;
+      i += CURSOR_MARKER.length;
+      continue;
+    }
+    const ansiMatch = /^\x1b\[[0-9;]*m/.exec(line.slice(i));
+    if (ansiMatch) {
+      output += ansiMatch[0];
+      i += ansiMatch[0].length;
+      continue;
+    }
+    const ch = line[i] as string;
+    output += ch === " " ? " " : "*";
+    i += 1;
+  }
+  return output;
+}
+
 async function promptMaskedInput(
   ctx: ExtensionCommandContext,
   label: string,
@@ -295,35 +318,59 @@ async function promptMaskedInput(
 ): Promise<string | null> {
   if (!ctx.hasUI) return null;
 
-  return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-    let value = "";
+  return ctx.ui.custom<string | null>((tui: any, theme: any, _kb: any, done: (r: string | null) => void) => {
+    let cachedLines: string[] | undefined;
+    const editorTheme: EditorTheme = {
+      borderColor: (s: string) => theme.fg("accent", s),
+      selectList: {
+        selectedPrefix: (t: string) => theme.fg("accent", t),
+        selectedText: (t: string) => theme.fg("accent", t),
+        description: (t: string) => theme.fg("muted", t),
+        scrollInfo: (t: string) => theme.fg("dim", t),
+        noMatch: (t: string) => theme.fg("warning", t),
+      },
+    };
+    const editor = new Editor(tui, editorTheme, { paddingX: 1 });
 
-    function render(width: number): string[] {
-      const lines: string[] = [];
-      lines.push(theme.fg("accent", `  ${label}`));
-      lines.push(theme.fg("dim", `  ${hint}`));
-      lines.push("");
-      lines.push(`  ${theme.fg("text", "*".repeat(Math.min(value.length, width - 4)))}`);
-      lines.push("");
-      lines.push(theme.fg("dim", "  Enter to confirm, Esc to cancel"));
-      return lines;
+    function refresh() {
+      cachedLines = undefined;
+      tui.requestRender();
     }
 
     function handleInput(data: string): void {
-      if (data === "\r" || data === "\n") {
-        done(value.trim() || null);
-      } else if (data === "\x1b" || data === "\x03") {
-        done(null);
-      } else if (data === "\x7f") {
-        value = value.slice(0, -1);
-        tui.invalidate();
-      } else if (data.length === 1 && data >= " ") {
-        value += data;
-        tui.invalidate();
+      if (matchesKey(data, Key.enter)) {
+        const value = editor.getText().trim();
+        done(value.length > 0 ? value : null);
+        return;
       }
+      if (matchesKey(data, Key.escape)) {
+        done(null);
+        return;
+      }
+      editor.handleInput(data);
+      refresh();
     }
 
-    return { render, handleInput, invalidate: () => tui.invalidate() };
+    function render(width: number): string[] {
+      if (cachedLines) return cachedLines;
+      const lines: string[] = [];
+      const add = (s: string) => lines.push(truncateToWidth(s, width));
+      add(theme.fg("accent", "\u2500".repeat(width)));
+      add(theme.fg("accent", theme.bold(` ${label}`)));
+      add(theme.fg("muted", `  ${hint}`));
+      lines.push("");
+      add(theme.fg("muted", " Enter value:"));
+      for (const line of editor.render(width - 2)) {
+        add(theme.fg("text", maskEditorLine(line)));
+      }
+      lines.push("");
+      add(theme.fg("dim", ` enter to confirm  |  esc to cancel`));
+      add(theme.fg("accent", "\u2500".repeat(width)));
+      cachedLines = lines;
+      return lines;
+    }
+
+    return { render, handleInput, invalidate: () => { cachedLines = undefined; } };
   });
 }
 
@@ -334,35 +381,59 @@ async function promptInput(
 ): Promise<string | null> {
   if (!ctx.hasUI) return null;
 
-  return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-    let value = "";
+  return ctx.ui.custom<string | null>((tui: any, theme: any, _kb: any, done: (r: string | null) => void) => {
+    let cachedLines: string[] | undefined;
+    const editorTheme: EditorTheme = {
+      borderColor: (s: string) => theme.fg("accent", s),
+      selectList: {
+        selectedPrefix: (t: string) => theme.fg("accent", t),
+        selectedText: (t: string) => theme.fg("accent", t),
+        description: (t: string) => theme.fg("muted", t),
+        scrollInfo: (t: string) => theme.fg("dim", t),
+        noMatch: (t: string) => theme.fg("warning", t),
+      },
+    };
+    const editor = new Editor(tui, editorTheme, { paddingX: 1 });
 
-    function render(_width: number): string[] {
-      const lines: string[] = [];
-      lines.push(theme.fg("accent", `  ${label}`));
-      lines.push(theme.fg("dim", `  ${hint}`));
-      lines.push("");
-      lines.push(`  ${theme.fg("text", value)}`);
-      lines.push("");
-      lines.push(theme.fg("dim", "  Enter to confirm, Esc to cancel"));
-      return lines;
+    function refresh() {
+      cachedLines = undefined;
+      tui.requestRender();
     }
 
     function handleInput(data: string): void {
-      if (data === "\r" || data === "\n") {
-        done(value.trim() || null);
-      } else if (data === "\x1b" || data === "\x03") {
-        done(null);
-      } else if (data === "\x7f") {
-        value = value.slice(0, -1);
-        tui.invalidate();
-      } else if (data.length === 1 && data >= " ") {
-        value += data;
-        tui.invalidate();
+      if (matchesKey(data, Key.enter)) {
+        const value = editor.getText().trim();
+        done(value.length > 0 ? value : null);
+        return;
       }
+      if (matchesKey(data, Key.escape)) {
+        done(null);
+        return;
+      }
+      editor.handleInput(data);
+      refresh();
     }
 
-    return { render, handleInput, invalidate: () => tui.invalidate() };
+    function render(width: number): string[] {
+      if (cachedLines) return cachedLines;
+      const lines: string[] = [];
+      const add = (s: string) => lines.push(truncateToWidth(s, width));
+      add(theme.fg("accent", "\u2500".repeat(width)));
+      add(theme.fg("accent", theme.bold(` ${label}`)));
+      add(theme.fg("muted", `  ${hint}`));
+      lines.push("");
+      add(theme.fg("muted", " Enter value:"));
+      for (const line of editor.render(width - 2)) {
+        add(theme.fg("text", line));
+      }
+      lines.push("");
+      add(theme.fg("dim", ` enter to confirm  |  esc to cancel`));
+      add(theme.fg("accent", "\u2500".repeat(width)));
+      cachedLines = lines;
+      return lines;
+    }
+
+    return { render, handleInput, invalidate: () => { cachedLines = undefined; } };
   });
 }
 
