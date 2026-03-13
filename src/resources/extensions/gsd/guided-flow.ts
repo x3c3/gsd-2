@@ -112,6 +112,19 @@ function findMilestoneIds(basePath: string): string[] {
   }
 }
 
+/** Return the highest numeric suffix among milestone IDs (0 when the list is empty or has no numeric IDs). */
+export function maxMilestoneNum(milestoneIds: string[]): number {
+  return milestoneIds.reduce((max, id) => {
+    const num = parseInt(id.replace(/^M/, ""), 10);
+    return num > max ? num : max;
+  }, 0);
+}
+
+/** Derive the next milestone ID from existing IDs using max-based approach to avoid collisions after deletions. */
+export function nextMilestoneId(milestoneIds: string[]): string {
+  return `M${String(maxMilestoneNum(milestoneIds) + 1).padStart(3, "0")}`;
+}
+
 // ─── Queue ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -153,12 +166,9 @@ export async function showQueue(
   const existingContext = await buildExistingMilestonesContext(basePath, milestoneIds, state);
 
   // ── Determine next milestone ID ─────────────────────────────────────
-  const maxNum = milestoneIds.reduce((max, id) => {
-    const num = parseInt(id.replace(/^M/, ""), 10);
-    return num > max ? num : max;
-  }, 0);
-  const nextId = `M${String(maxNum + 1).padStart(3, "0")}`;
-  const nextIdPlus1 = `M${String(maxNum + 2).padStart(3, "0")}`;
+  const max = maxMilestoneNum(milestoneIds);
+  const nextId = `M${String(max + 1).padStart(3, "0")}`;
+  const nextIdPlus1 = `M${String(max + 2).padStart(3, "0")}`;
 
   // ── Build preamble ──────────────────────────────────────────────────
   const activePart = state.activeMilestone
@@ -508,7 +518,7 @@ export async function showSmartEntry(
     }
 
     const milestoneIds = findMilestoneIds(basePath);
-    const nextId = `M${String(milestoneIds.length + 1).padStart(3, "0")}`;
+    const nextId = nextMilestoneId(milestoneIds);
     const isFirst = milestoneIds.length === 0;
 
     if (isFirst) {
@@ -570,7 +580,7 @@ export async function showSmartEntry(
 
     if (choice === "new_milestone") {
       const milestoneIds = findMilestoneIds(basePath);
-      const nextId = `M${String(milestoneIds.length + 1).padStart(3, "0")}`;
+      const nextId = nextMilestoneId(milestoneIds);
 
       pendingAutoStart = { ctx, pi, basePath, milestoneId: nextId, step: stepMode };
       dispatchWorkflow(pi, buildDiscussPrompt(nextId,
@@ -638,7 +648,7 @@ export async function showSmartEntry(
         }));
       } else if (choice === "skip_milestone") {
         const milestoneIds = findMilestoneIds(basePath);
-        const nextId = `M${String(milestoneIds.length + 1).padStart(3, "0")}`;
+        const nextId = nextMilestoneId(milestoneIds);
         pendingAutoStart = { ctx, pi, basePath, milestoneId: nextId, step: stepMode };
         dispatchWorkflow(pi, buildDiscussPrompt(nextId,
           `New milestone ${nextId}.`,
