@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-03-13
+
+### Added
+- Model fallback support for auto-mode phases — if the configured model fails, GSD tries alternate models before stopping
+- `/kill` command for immediate process termination
+
+### Fixed
+- `npm install -g gsd-pi` now works — workspace packages bundled in npm tarball via `bundleDependencies`
+- External PI ecosystem packages (pi-rtk, pi-context, etc.) can now resolve `@mariozechner/*` imports through jiti aliases
+- Missing `export-html` vendor files (marked.min.js, highlight.min.js) restored
+- Skipped API keys now persist so the setup wizard doesn't repeat on every launch
+- Provider config and extension loading reused correctly
+
+### Changed
+- `/exit` uses graceful shutdown (saves session state); `/kill` replaces the old immediate-exit behavior
+
 ## [2.7.0] - 2026-03-12
 
 ### Changed
@@ -263,7 +279,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.7.1...HEAD
+[2.7.1]: https://github.com/gsd-build/gsd-2/compare/v2.7.0...v2.7.1
 [2.7.0]: https://github.com/gsd-build/gsd-2/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/gsd-build/gsd-2/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/gsd-build/gsd-2/compare/v2.5.0...v2.5.1
