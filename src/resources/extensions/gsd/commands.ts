@@ -393,6 +393,16 @@ async function handlePrefsWizard(
     prefs.skill_discovery = discoveryChoice;
   }
 
+  // ─── Unique milestone IDs ──────────────────────────────────────────────
+  const currentUnique = prefs.unique_milestone_ids;
+  const uniqueChoice = await ctx.ui.select(
+    `Unique milestone IDs${currentUnique !== undefined ? ` (current: ${currentUnique})` : ""}:`,
+    ["true", "false", "(keep current)"],
+  );
+  if (uniqueChoice && uniqueChoice !== "(keep current)") {
+    prefs.unique_milestone_ids = uniqueChoice === "true";
+  }
+
   // ─── Serialize to frontmatter ───────────────────────────────────────────
   prefs.version = prefs.version || 1;
   const frontmatter = serializePreferencesToFrontmatter(prefs);
@@ -485,7 +495,7 @@ function serializePreferencesToFrontmatter(prefs: Record<string, unknown>): stri
   const orderedKeys = [
     "version", "always_use_skills", "prefer_skills", "avoid_skills",
     "skill_rules", "custom_instructions", "models", "skill_discovery",
-    "auto_supervisor", "uat_dispatch", "budget_ceiling", "remote_questions", "git",
+    "auto_supervisor", "uat_dispatch", "unique_milestone_ids", "budget_ceiling", "remote_questions", "git",
   ];
 
   const seen = new Set<string>();

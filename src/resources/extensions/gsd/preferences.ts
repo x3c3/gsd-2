@@ -8,6 +8,10 @@ import { VALID_BRANCH_NAME } from "./git-service.ts";
 const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
 const LEGACY_GLOBAL_PREFERENCES_PATH = join(homedir(), ".pi", "agent", "gsd-preferences.md");
 const PROJECT_PREFERENCES_PATH = join(process.cwd(), ".gsd", "preferences.md");
+// Bootstrap in gitignore.ts historically created PREFERENCES.md (uppercase) by mistake.
+// Check uppercase as a fallback so those files aren't silently ignored.
+const GLOBAL_PREFERENCES_PATH_UPPERCASE = join(homedir(), ".gsd", "PREFERENCES.md");
+const PROJECT_PREFERENCES_PATH_UPPERCASE = join(process.cwd(), ".gsd", "PREFERENCES.md");
 const SKILL_ACTIONS = new Set(["use", "prefer", "avoid"]);
 
 export interface GSDSkillRule {
@@ -83,6 +87,7 @@ export interface GSDPreferences {
   skill_discovery?: SkillDiscoveryMode;
   auto_supervisor?: AutoSupervisorConfig;
   uat_dispatch?: boolean;
+  unique_milestone_ids?: boolean;
   budget_ceiling?: number;
   remote_questions?: RemoteQuestionsConfig;
   git?: GitPreferences;
@@ -108,11 +113,13 @@ export function getProjectGSDPreferencesPath(): string {
 
 export function loadGlobalGSDPreferences(): LoadedGSDPreferences | null {
   return loadPreferencesFile(GLOBAL_PREFERENCES_PATH, "global")
+    ?? loadPreferencesFile(GLOBAL_PREFERENCES_PATH_UPPERCASE, "global")
     ?? loadPreferencesFile(LEGACY_GLOBAL_PREFERENCES_PATH, "global");
 }
 
 export function loadProjectGSDPreferences(): LoadedGSDPreferences | null {
-  return loadPreferencesFile(PROJECT_PREFERENCES_PATH, "project");
+  return loadPreferencesFile(PROJECT_PREFERENCES_PATH, "project")
+    ?? loadPreferencesFile(PROJECT_PREFERENCES_PATH_UPPERCASE, "project");
 }
 
 export function loadEffectiveGSDPreferences(): LoadedGSDPreferences | null {
@@ -572,6 +579,7 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     skill_discovery: override.skill_discovery ?? base.skill_discovery,
     auto_supervisor: { ...(base.auto_supervisor ?? {}), ...(override.auto_supervisor ?? {}) },
     uat_dispatch: override.uat_dispatch ?? base.uat_dispatch,
+    unique_milestone_ids: override.unique_milestone_ids ?? base.unique_milestone_ids,
     budget_ceiling: override.budget_ceiling ?? base.budget_ceiling,
     remote_questions: override.remote_questions
       ? { ...(base.remote_questions ?? {}), ...override.remote_questions }
@@ -649,6 +657,10 @@ function validatePreferences(preferences: GSDPreferences): {
 
   if (preferences.uat_dispatch !== undefined) {
     validated.uat_dispatch = !!preferences.uat_dispatch;
+  }
+
+  if (preferences.unique_milestone_ids !== undefined) {
+    validated.unique_milestone_ids = !!preferences.unique_milestone_ids;
   }
 
   if (preferences.budget_ceiling !== undefined) {
