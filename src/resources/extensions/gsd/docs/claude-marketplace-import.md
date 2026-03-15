@@ -1,75 +1,12 @@
 # Claude Marketplace Import
 
-This document explains how GSD imports Claude Code marketplaces and plugins, how that maps to Anthropic's documented plugin model, and what gets persisted into GSD/Pi settings.
+This document describes the Claude marketplace import feature in GSD: what it reads, what it imports, what it persists, and what it does not translate into active GSD/Pi runtime behavior.
 
 ---
 
-## Overview
+## What this feature does
 
-Claude Code plugins are distributed through **marketplaces**. Per Anthropic's docs, users add a marketplace source with:
-
-```text
-/plugin marketplace add <github repo or local path>
-```
-
-A marketplace contains a catalog at:
-
-```text
-.claude-plugin/marketplace.json
-```
-
-That catalog lists one or more plugins and where each plugin should be fetched from.
-
-GSD's Claude import flow reads those marketplace catalogs, inspects the referenced plugins, and imports the parts that map cleanly into GSD/Pi today.
-
----
-
-## Claude Code model vs GSD model
-
-### Claude Code concepts
-
-Anthropic distinguishes between:
-
-- **Marketplace source** — where Claude fetches `marketplace.json`
-- **Plugin source** — where Claude fetches each plugin listed in that marketplace
-- **Installed plugin cache** — Claude copies installed plugin payloads into:
-
-```text
-~/.claude/plugins/cache
-```
-
-Claude also stores user-added marketplace sources under:
-
-```text
-~/.claude/plugins/marketplaces
-```
-
-### GSD import model
-
-GSD treats Claude marketplaces as **plugin catalogs**, not generic npm-style packages.
-
-For imported Claude components, GSD preserves canonical namespaced identity:
-
-- skills: `plugin-name:skill-name`
-- agents: `plugin-name:agent-name`
-
-This avoids flattening Claude plugin components into anonymous global names.
-
----
-
-## Discovery order
-
-When GSD looks for Claude plugin/marketplace material, it prefers Claude-managed locations first:
-
-1. `~/.claude/plugins/marketplaces`
-2. `~/.claude/plugins/cache`
-3. `~/.claude/plugins`
-
-After that, GSD may still look at local clone-style convenience paths such as sibling repos or `~/repos/...` locations. Those are useful for developer workflows and examples, but they are **not** the primary Claude storage model.
-
----
-
-## What the import flow does
+GSD can read Claude Code marketplace catalogs, inspect the plugins they reference, and import selected Claude skills into GSD/Pi while preserving Claude-style namespace identity.
 
 The interactive entry point is:
 
@@ -84,51 +21,124 @@ You can also choose scope explicitly:
 /gsd prefs import-claude project
 ```
 
-The flow is:
+---
 
-1. discover Claude skills and/or marketplace roots
-2. identify marketplace roots by checking for `.claude-plugin/marketplace.json`
-3. inspect discovered plugins and inventory components
-4. let you select components to import
-5. validate for canonical conflicts and shorthand ambiguity
-6. persist imported resources into GSD/Pi settings
+## Claude Code model this feature follows
+
+Anthropic documents Claude marketplaces as sources users add with:
+
+```text
+/plugin marketplace add <github repo or local path>
+```
+
+A marketplace contains a catalog at:
+
+```text
+.claude-plugin/marketplace.json
+```
+
+Anthropic distinguishes between:
+
+- **Marketplace source** — where Claude fetches `marketplace.json`
+- **Plugin source** — where Claude fetches each plugin listed in that marketplace
+- **Installed plugin cache** — Claude copies installed plugin payloads into:
+
+```text
+~/.claude/plugins/cache
+```
+
+Anthropic also documents user-added marketplace sources under:
+
+```text
+~/.claude/plugins/marketplaces
+```
+
+GSD aligns its Claude import flow to that model.
 
 ---
 
-## What gets imported today
+## Where GSD looks
 
-### Imported
+For Claude plugin and marketplace material, GSD prefers Claude-managed locations first:
 
-- **Skills**
-  - persisted into GSD/Pi skill paths
-  - available for use in GSD/Pi
-- **Marketplace-derived skills**
-  - imported with canonical plugin namespace preserved
-- **Marketplace-derived agents**
-  - discovered, modeled, validated, and preserved in the import manifest
+1. `~/.claude/plugins/marketplaces`
+2. `~/.claude/plugins/cache`
+3. `~/.claude/plugins`
 
-### Discovered but not fully imported into Pi-native runtime behavior
+After that, GSD still allows local clone-style convenience paths such as sibling repos or `~/repos/...` paths. Those fallbacks remain supported for developer workflows, but they are not the primary Claude storage model.
+
+---
+
+## What GSD imports
+
+### Imported into GSD/Pi settings
+
+- Claude skills discovered directly from configured skill roots
+- Marketplace-derived skills
+
+Imported marketplace skills preserve canonical namespace identity, for example:
+
+```text
+python3-development:stinkysnake
+scientific-method:experiment-protocol
+```
+
+### Discovered, modeled, and validated
+
+- Marketplace-derived agents
+
+### Discovered but not translated into active Pi-native runtime behavior
 
 - hooks
 - MCP server definitions
 - LSP server definitions
-- other Claude plugin metadata that does not directly map to current GSD/Pi runtime surfaces
-
-These are still important for truthful discovery, but not all of them are currently translated into active Pi runtime behavior.
+- other plugin metadata that does not currently map directly into active GSD/Pi runtime surfaces
 
 ---
 
-## Important behavior: marketplace agents are not stored as package sources
+## Import flow
 
-Claude plugin agent directories are usually markdown agent-definition directories, for example:
+The import flow does the following:
+
+1. discover Claude skills and marketplace/plugin roots
+2. identify marketplace roots by checking for `.claude-plugin/marketplace.json`
+3. inspect discovered plugins and inventory their components
+4. let you select components to import
+5. validate the selection for canonical conflicts and ambiguity
+6. persist imported resources into GSD/Pi settings
+
+---
+
+## Namespace behavior
+
+GSD preserves Claude plugin namespace semantics rather than flattening plugin components into anonymous global names.
+
+### Canonical references
+
+Canonical references remain available for imported components:
+
+- skills: `plugin-name:skill-name`
+- agents: `plugin-name:agent-name`
+
+### Shorthand
+
+GSD supports shorthand lookup when it is unambiguous.
+
+### Local-first resolution
+
+When a namespaced component refers to another component by bare name, GSD tries the same plugin namespace first before broader lookup.
+
+---
+
+## Important safeguard: marketplace agent directories are not stored as package sources
+
+Claude plugin agent directories are markdown agent-definition directories, for example:
 
 ```text
 .../plugins/python3-development/agents
 ```
 
-These are **not** loadable Pi extension packages.
-
-GSD therefore does **not** persist imported marketplace agent directories into:
+GSD does **not** persist imported marketplace agent directories into:
 
 ```json
 settings.packages
@@ -138,7 +148,7 @@ This is intentional.
 
 ### Why
 
-If an `.../agents` directory is written into `settings.packages`, Pi can treat it like an extension/package root during startup. That leads to extension loader failures such as:
+Persisting an `.../agents` directory into `settings.packages` can cause Pi startup to treat that directory as an extension/package root. In real host validation, that produced extension loader failures such as:
 
 ```text
 Cannot find module '.../agents'
@@ -152,36 +162,11 @@ GSD now avoids writing those entries.
 
 ### Skills
 
-Imported skills are persisted into Pi skill settings and may also be added to GSD preferences depending on what you choose during import.
+Imported skills are persisted into Pi skill settings. Depending on the selection path, they may also be added to GSD preferences.
 
 ### Marketplace agents
 
-Marketplace agents are preserved in the import model and validated, but GSD does **not** persist their `agents/` directories as package sources.
-
-This prevents startup breakage and keeps the imported state aligned with Claude's plugin semantics.
-
----
-
-## Namespace behavior
-
-GSD preserves Claude plugin namespace semantics.
-
-### Canonical references
-
-Use canonical names when you need the authoritative unique reference:
-
-```text
-python3-development:stinkysnake
-scientific-method:experiment-protocol
-```
-
-### Shorthand
-
-GSD may allow shorthand when it is safe and unambiguous.
-
-### Local-first resolution
-
-If a namespaced component refers to another component by bare name, GSD tries the same plugin namespace first before broader lookup.
+Marketplace agents remain part of the import model and validation surface, but their `agents/` directories are not persisted as package roots.
 
 ---
 
@@ -190,31 +175,35 @@ If a namespaced component refers to another component by bare name, GSD tries th
 GSD distinguishes between:
 
 - **canonical conflicts** — hard errors
-- **shorthand overlaps** — warnings when canonical names are still distinct
-- **alias conflicts** — warnings/errors depending on the collision shape
+- **shorthand overlaps** — warnings when canonical names remain distinct
+- **alias conflicts** — diagnostics for alias collisions or shadowing
 
-This keeps the operational surface honest without over-reporting valid marketplace content as broken.
+This allows imported marketplace content to be validated without reporting valid overlap as fatal breakage.
 
 ---
 
-## Testing model
+## Verification status of this feature
 
-GSD uses three levels of validation for this feature:
+This feature has been verified in three ways:
 
 1. **Contract/unit tests** for parsing, namespacing, resolution, diagnostics, and import behavior
-2. **Portable integration-style tests** that can clone marketplace repos when local examples are absent
+2. **Portable integration-style tests** using local or cloned marketplace fixtures
 3. **Real host validation** against the installed `gsd` binary and actual Claude-managed directories on the host machine
 
-The test model is intentionally moving away from assumptions like `../claude_skills` always existing on the contributor's machine.
+Real host validation included:
+
+- clean startup of the installed `gsd` binary after fixing stale bad settings
+- successful invocation of an imported skill (`/stinkysnake`)
+- successful execution of `/gsd prefs import-claude global`
+- verification that imported marketplace agent directories were **not** reintroduced into `settings.packages`
 
 ---
 
 ## Current limitations
 
-- GSD does not yet fully translate every Claude plugin component type into active Pi runtime behavior
+- GSD does not yet translate every Claude plugin component type into active Pi-native runtime behavior
 - marketplace-derived agents are not persisted as package roots, by design
-- Claude-managed cache contents may be useful for discovery, but they should not be confused with generic package roots
-- some test and discovery surfaces still carry developer-convenience fallback paths for local clone workflows
+- clone-style local fallbacks still exist for developer convenience, even though Claude-managed marketplace/plugin locations are preferred first
 
 ---
 
