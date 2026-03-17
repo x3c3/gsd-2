@@ -429,8 +429,12 @@ export function mergeMilestoneToMain(
   const integrationBranch = readIntegrationBranch(originalBasePath_, milestoneId);
   const mainBranch = integrationBranch ?? prefs.main_branch ?? "main";
 
-  // 5. Checkout integration branch
-  nativeCheckoutBranch(originalBasePath_, mainBranch);
+  // 5. Checkout integration branch (skip if already current — avoids git error
+  //    when main is already checked out in the project-root worktree, #757)
+  const currentBranchAtBase = nativeGetCurrentBranch(originalBasePath_);
+  if (currentBranchAtBase !== mainBranch) {
+    nativeCheckoutBranch(originalBasePath_, mainBranch);
+  }
 
   // 6. Build rich commit message
   const milestoneTitle = roadmap.title.replace(/^M\d+:\s*/, "").trim() || milestoneId;
