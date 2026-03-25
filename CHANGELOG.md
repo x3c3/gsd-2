@@ -6,6 +6,57 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.45.0] - 2026-03-25
+
+### Added
+- **web**: make web UI mobile responsive (#2354)
+- **gsd**: add `/gsd rethink` command for conversational project reorganization (#2459)
+- **gsd**: add renderCall/renderResult previews to DB tools (#2273)
+- add timestamps on user and assistant messages (#2368)
+- **gsd**: add `/gsd mcp` command for MCP server status and connectivity (#2362)
+- complete offline mode support (#2429)
+- **system-context**: inject global ~/.gsd/agent/KNOWLEDGE.md into system prompt (#2331)
+
+### Fixed
+- **gsd**: handle retentionDays=0 on Windows + run windows-portability on PRs (#2460)
+- use Array.from instead of Buffer.from for native processStreamChunk state (#2348)
+- **gsd**: isInheritedRepo conflates ~/.gsd with project .gsd when git root is $HOME (#2398)
+- reconcile disk milestones missing from DB in deriveStateFromDb (#2416) (#2422)
+- **auto**: reset recoveryAttempts on unit re-dispatch (#2322) (#2424)
+- detect and preserve submodule state during worktree teardown (#2337) (#2425)
+- **auto-start**: handle survivor branch recovery in phase=complete (#2358) (#2427)
+- **gsd**: widen test search window for CRLF portability on Windows (#2458)
+- **gsd**: preserve rich task plans on DB roundtrip (#2450) (#2453)
+- merge worktree back to main when stopAuto is called after milestone completion (#2317) (#2430)
+- **gsd**: skip doctor directory checks for pending slices (#2446)
+- **gsd**: migrate completion/validation prompts to DB-backed tools (#2449)
+- **gsd**: prevent saveArtifactToDb from overwriting larger files with truncated content (#2442) (#2447)
+- stop auto loop on real code merge conflicts (#2330) (#2428)
+- classify terminated/connection errors as transient in provider error handler (#2309) (#2432)
+- archive completed-units.json on milestone transition and sync metrics.json (#2313) (#2431)
+- supervision timeouts now respect task est: annotations (#2243) (#2434)
+- auto_pr: true now actually creates PRs — fix 3 interacting bugs (#2302) (#2433)
+- **gsd**: insert DB row when generating milestone ID (#2416)
+- **gsd**: reconcile disk-only milestones into DB in deriveStateFromDb (#2416)
+- **preferences**: deduplicate unrecognized format warning on repeated loads (#2375)
+- gate auto-mode bootstrap on SQLite availability (#2419) (#2421)
+- block /gsd quick when auto-mode is active (#2420)
+- **ci**: add Rust target for all platforms, not just cross-compilation
+- **ci**: restore Rust target triple and separate cross-compilation setup
+- **ci**: separate cross-compilation target from toolchain install
+
+### Changed
+- migrate D-G test files from createTestContext to node:test (#2418)
+- **test**: replace try/finally with beforeEach/afterEach in packages tests (#2390)
+- **test**: migrate gsd/tests s-z from custom harness to node:test (#2397)
+- **test**: migrate gsd/tests o-r from custom harness to node:test (#2401)
+- **test**: migrate gsd/tests i-n from custom harness to node:test (#2399)
+- **test**: migrate gsd/tests a-c from custom harness to node:test (#2400)
+- **test**: replace try/finally with t.after() in gsd/tests (e-i) (#2396)
+- **test**: replace try/finally with t.after() in gsd/tests (a-d) (#2395)
+- **test**: replace try/finally with t.after() in src/tests (o-z) (#2392)
+- **test**: replace try/finally with t.after() in src/tests (a-n) (#2394)
+
 ## [2.44.0] - 2026-03-24
 
 ### Added
@@ -1740,7 +1791,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.44.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.45.0...HEAD
+[2.45.0]: https://github.com/gsd-build/gsd-2/compare/v2.44.0...v2.45.0
 [2.44.0]: https://github.com/gsd-build/gsd-2/compare/v2.43.0...v2.44.0
 [2.43.0]: https://github.com/gsd-build/gsd-2/compare/v2.42.0...v2.43.0
 [2.42.0]: https://github.com/gsd-build/gsd-2/compare/v2.41.0...v2.42.0
