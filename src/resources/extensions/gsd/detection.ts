@@ -785,10 +785,10 @@ function pushUnique(arr: string[], value: string): void {
 }
 
 function matchesProjectFileMarker(scannedFile: string, marker: string): boolean {
+  const normalized = scannedFile.replaceAll("\\", "/");
   return (
-    scannedFile === marker ||
-    scannedFile.endsWith(`/${marker}`) ||
-    scannedFile.endsWith(`\\${marker}`)
+    normalized === marker ||
+    normalized.endsWith(`/${marker}`)
   );
 }
 
