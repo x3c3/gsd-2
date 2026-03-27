@@ -37,6 +37,15 @@ import { writeUnitRuntimeRecord } from "../unit-runtime.js";
 // ─── generateMilestoneReport ──────────────────────────────────────────────────
 
 /**
+ * Resolve the base path for milestone reports.
+ * Prefers originalBasePath (project root) over basePath (which may be a worktree).
+ * Exported for testing as _resolveReportBasePath.
+ */
+export function _resolveReportBasePath(s: Pick<AutoSession, "originalBasePath" | "basePath">): string {
+  return s.originalBasePath || s.basePath;
+}
+
+/**
  * Generate and write an HTML milestone report snapshot.
  * Extracted from the milestone-transition block in autoLoop.
  */
@@ -50,13 +59,15 @@ async function generateMilestoneReport(
   const { writeReportSnapshot } = await importExtensionModule<typeof import("../reports.js")>(import.meta.url, "../reports.js");
   const { basename } = await import("node:path");
 
-  const snapData = await loadVisualizerData(s.basePath);
+  const reportBasePath = _resolveReportBasePath(s);
+
+  const snapData = await loadVisualizerData(reportBasePath);
   const completedMs = snapData.milestones.find(
     (m: { id: string }) => m.id === milestoneId,
   );
   const msTitle = completedMs?.title ?? milestoneId;
   const gsdVersion = process.env.GSD_VERSION ?? "0.0.0";
-  const projName = basename(s.basePath);
+  const projName = basename(reportBasePath);
   const doneSlices = snapData.milestones.reduce(
     (acc: number, m: { slices: { done: boolean }[] }) =>
       acc + m.slices.filter((sl: { done: boolean }) => sl.done).length,
@@ -67,10 +78,10 @@ async function generateMilestoneReport(
     0,
   );
   const outPath = writeReportSnapshot({
-    basePath: s.basePath,
+    basePath: reportBasePath,
     html: generateHtmlReport(snapData, {
       projectName: projName,
-      projectPath: s.basePath,
+      projectPath: reportBasePath,
       gsdVersion,
       milestoneId,
       indexRelPath: "index.html",
@@ -79,7 +90,7 @@ async function generateMilestoneReport(
     milestoneTitle: msTitle,
     kind: "milestone",
     projectName: projName,
-    projectPath: s.basePath,
+    projectPath: reportBasePath,
     gsdVersion,
     totalCost: snapData.totals?.cost ?? 0,
     totalTokens: snapData.totals?.tokens.total ?? 0,
