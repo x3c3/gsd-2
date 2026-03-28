@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.58.0] - 2026-03-28
+
+### Added
+- Added 6 discord.js shard/error/warn event listeners for reconnect…
+
+### Fixed
+- **auto**: guard startAuto() against concurrent invocation (#2923)
+- **auto-dispatch**: widen operational verification gate regex (fixes #2866) (#2898)
+- **parallel**: three bugs preventing reliable parallel worker execution (#2801)
+- **web**: fall back to project totals when dashboard metrics are zero (#2847)
+- **gsd**: parse raw YAML under preference headings (#2794)
+- **gsd**: persist verification classes in milestone validation (#2820)
+- **gsd**: guard reconcileWorktreeDb against same-file ATTACH corruption (#2825)
+- **web**: skip shutdown in daemon mode so server survives tab close (#2842)
+- **headless**: skip execution_complete for multi-turn commands (auto/next)
+- Fixed 3 bugs (launchd JSON parsing, login race condition, interact…
+
 ## [2.57.0] - 2026-03-28
 
 ### Added
@@ -2137,7 +2154,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.57.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.58.0...HEAD
+[2.58.0]: https://github.com/gsd-build/gsd-2/compare/v2.57.0...v2.58.0
 [2.57.0]: https://github.com/gsd-build/gsd-2/compare/v2.56.0...v2.57.0
 [2.56.0]: https://github.com/gsd-build/gsd-2/compare/v2.55.0...v2.56.0
 [2.55.0]: https://github.com/gsd-build/gsd-2/compare/v2.54.0...v2.55.0
