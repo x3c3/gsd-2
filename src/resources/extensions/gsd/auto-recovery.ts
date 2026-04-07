@@ -436,11 +436,11 @@ export function writeBlockerPlaceholder(
     if (unitType === "execute-task" && mid && sid && tid) {
       try { updateTaskStatus(mid, sid, tid, "complete", ts); } catch (e) { logWarning("recovery", `updateTaskStatus failed during context exhaustion: ${e instanceof Error ? e.message : String(e)}`); }
       // Append event so worktree reconciliation can replay this recovery completion
-      try { appendEvent(base, { cmd: "complete-task", params: { milestoneId: mid, sliceId: sid, taskId: tid }, ts, actor: "system", trigger_reason: "blocker-placeholder-recovery" }); } catch { /* non-fatal */ }
+      try { appendEvent(base, { cmd: "complete-task", params: { milestoneId: mid, sliceId: sid, taskId: tid }, ts, actor: "system", trigger_reason: "blocker-placeholder-recovery" }); } catch (e) { logWarning("recovery", `appendEvent failed for task recovery: ${e instanceof Error ? e.message : String(e)}`); }
     }
     if (unitType === "complete-slice" && mid && sid) {
       try { updateSliceStatus(mid, sid, "complete", ts); } catch (e) { logWarning("recovery", `updateSliceStatus failed during context exhaustion: ${e instanceof Error ? e.message : String(e)}`); }
-      try { appendEvent(base, { cmd: "complete-slice", params: { milestoneId: mid, sliceId: sid }, ts, actor: "system", trigger_reason: "blocker-placeholder-recovery" }); } catch { /* non-fatal */ }
+      try { appendEvent(base, { cmd: "complete-slice", params: { milestoneId: mid, sliceId: sid }, ts, actor: "system", trigger_reason: "blocker-placeholder-recovery" }); } catch (e) { logWarning("recovery", `appendEvent failed for slice recovery: ${e instanceof Error ? e.message : String(e)}`); }
     }
   }
 
