@@ -370,12 +370,10 @@ export async function renderAllProjections(basePath: string, milestoneId: string
   const sliceRows = getMilestoneSlices(milestoneId);
 
   for (const slice of sliceRows) {
-    // Render PLAN.md for each slice
-    try {
-      renderPlanProjection(basePath, milestoneId, slice.id);
-    } catch (err) {
-      logWarning("projection", `renderPlanProjection failed for ${milestoneId}/${slice.id}: ${(err as Error).message}`);
-    }
+    // PLAN.md is rendered by the authoritative markdown-renderer.js in
+    // plan-slice/replan-slice tools. Do NOT overwrite it here — the simplified
+    // projection is missing key sections (Must-Haves, Verification, Files
+    // Likely Touched) and corrupts multi-line task descriptions (#3651).
 
     // Render SUMMARY.md for each completed task
     const taskRows = getSliceTasks(milestoneId, slice.id);
