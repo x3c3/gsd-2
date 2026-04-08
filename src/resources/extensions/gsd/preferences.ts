@@ -200,11 +200,13 @@ function loadPreferencesFile(path: string, scope: "global" | "project"): LoadedG
 }
 
 let _warnedUnrecognizedFormat = false;
+let _warnedSectionParse = false;
 
 /** @internal Reset the warn-once flags — exported for testing only. */
 export function _resetParseWarningFlag(): void {
   _warnedUnrecognizedFormat = false;
   _warnedFrontmatterParse = false;
+  _warnedSectionParse = false;
 }
 
 /** @internal Exported for testing only */
@@ -309,7 +311,10 @@ function parseHeadingListFormat(content: string): GSDPreferences {
 
       typed[targetSection] = value;
     } catch (e) {
-      logWarning("guided", `preferences section parse failed: ${(e as Error).message}`);
+      if (!_warnedSectionParse) {
+        _warnedSectionParse = true;
+        logWarning("guided", `preferences section parse failed: ${(e as Error).message}`);
+      }
     }
   }
 

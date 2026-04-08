@@ -17,6 +17,7 @@ import {
   parsePreferencesMarkdown,
   _resetParseWarningFlag,
 } from "../preferences.ts";
+import { _resetLogs, peekLogs } from "../workflow-logger.ts";
 import type { GSDPreferences, GSDModelConfigV2, GSDPhaseModelConfig } from "../preferences.ts";
 
 // ── Git preferences ──────────────────────────────────────────────────────────
@@ -420,6 +421,25 @@ test("parsePreferencesMarkdown parses heading+list format without frontmatter (#
   const result = parsePreferencesMarkdown(content);
   assert.notEqual(result, null, "heading+list content should be parsed");
   assert.deepStrictEqual(result!.git, { isolation: "none" });
+});
+
+test("section parse warning is emitted at most once for heading+list YAML failures (#3759)", () => {
+  _resetParseWarningFlag();
+  _resetLogs();
+
+  const content = `## Git
+bad: [
+`;
+
+  parsePreferencesMarkdown(content);
+  parsePreferencesMarkdown(content);
+  parsePreferencesMarkdown(content);
+
+  const warnings = peekLogs().filter((entry) => entry.component === "guided" && entry.message.includes("preferences section parse failed"));
+  assert.equal(warnings.length, 1, `expected exactly 1 guided warning, got ${warnings.length}`);
+
+  _resetParseWarningFlag();
+  _resetLogs();
 });
 
 // ── Experimental preferences ─────────────────────────────────────────────────
