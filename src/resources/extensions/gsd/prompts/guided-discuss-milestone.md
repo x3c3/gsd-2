@@ -100,6 +100,8 @@ If they clarify, absorb the correction and re-verify.
 
 The depth verification is the only required confirmation gate. Do not add a second "ready to proceed?" gate after it.
 
+**CRITICAL — Non-bypassable gate:** The system mechanically blocks CONTEXT.md writes until the user selects the "(Recommended)" option. If the user declines, cancels, or the tool fails, you MUST re-ask — never rationalize past the block ("tool not responding, I'll proceed" is forbidden). The gate exists to protect the user's work; treat a block as an instruction, not an obstacle to work around.
+
 ---
 
 ## Output

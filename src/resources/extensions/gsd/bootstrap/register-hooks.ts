@@ -6,7 +6,7 @@ import { isToolCallEventType } from "@gsd/pi-coding-agent";
 import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
 import { buildBeforeAgentStartResult } from "./system-context.js";
 import { handleAgentEnd } from "./agent-end-recovery.js";
-import { clearDiscussionFlowState, isDepthVerified, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockQueueExecution } from "./write-gate.js";
+import { clearDiscussionFlowState, isDepthVerified, isDepthConfirmationAnswer, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockQueueExecution } from "./write-gate.js";
 import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
 import { cleanupQuickBranch } from "../quick.js";
 import { getDiscussionMilestoneId } from "../guided-flow.js";
@@ -249,7 +249,12 @@ export function registerHooks(pi: ExtensionAPI): void {
     const questions: any[] = (event.input as any)?.questions ?? [];
     for (const question of questions) {
       if (typeof question.id === "string" && question.id.includes("depth_verification")) {
-        markDepthVerified();
+        // Only unlock the gate if the user selected the first option (confirmation).
+        // Cross-references against the question's defined options to reject free-form "Other" text.
+        const answer = details.response?.answers?.[question.id];
+        if (isDepthConfirmationAnswer(answer?.selected, question.options)) {
+          markDepthVerified();
+        }
         break;
       }
     }
