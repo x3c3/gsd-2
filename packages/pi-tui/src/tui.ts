@@ -616,9 +616,10 @@ export class TUI extends Container {
 		const height = this.terminal.rows;
 		let viewportTop = Math.max(0, this.maxLinesRendered - height);
 		let prevViewportTop = this.previousViewportTop;
+		let contentCursorRow = this.cursorRow;
 		let hardwareCursorRow = this.hardwareCursorRow;
 		const computeLineDiff = (targetRow: number): number => {
-			const currentScreenRow = hardwareCursorRow - prevViewportTop;
+			const currentScreenRow = contentCursorRow - prevViewportTop;
 			const targetScreenRow = targetRow - viewportTop;
 			return targetScreenRow - currentScreenRow;
 		};
@@ -805,6 +806,7 @@ export class TUI extends Container {
 			buffer += "\r\n".repeat(scroll);
 			prevViewportTop += scroll;
 			viewportTop += scroll;
+			contentCursorRow = moveTargetRow;
 			hardwareCursorRow = moveTargetRow;
 		}
 
