@@ -507,7 +507,13 @@ export async function runPreDispatch(
   }
 
   // Mid-merge safety check
-  if (deps.reconcileMergeState(s.basePath, ctx)) {
+  const mergeReconcileResult = deps.reconcileMergeState(s.basePath, ctx);
+  if (mergeReconcileResult === "blocked") {
+    await deps.pauseAuto(ctx, pi);
+    debugLog("autoLoop", { phase: "exit", reason: "merge-reconciliation-blocked" });
+    return { action: "break", reason: "merge-reconciliation-blocked" };
+  }
+  if (mergeReconcileResult === "reconciled") {
     deps.invalidateAllCaches();
     state = await deps.deriveState(s.basePath);
     mid = state.activeMilestone?.id;
@@ -1639,4 +1645,3 @@ export async function runFinalize(
 
   return { action: "next", data: undefined as void };
 }
-

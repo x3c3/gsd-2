@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -189,6 +189,47 @@ test("runUnit returns cancelled when session creation times out", async () => {
   assert.equal(result.status, "cancelled");
   assert.equal(result.event, undefined);
   assert.equal(pi.calls.length, 0);
+});
+
+test("runUnit keeps the session-switch guard across a late newSession settlement", async () => {
+  _resetPendingResolve();
+  mock.timers.enable();
+
+  try {
+    const ctx = makeMockCtx();
+    const pi = makeMockPi();
+    const firstSession = makeMockSession({ newSessionDelayMs: 60_000 });
+    const secondSession = makeMockSession({ newSessionDelayMs: 60_000 });
+
+    const firstRun = runUnit(ctx, pi, firstSession, "task", "T01", "prompt");
+
+    mock.timers.tick(30_000);
+    await Promise.resolve();
+
+    const firstResult = await firstRun;
+    assert.equal(firstResult.status, "cancelled");
+    assert.equal(isSessionSwitchInFlight(), true, "guard should remain set after the timed-out session");
+
+    mock.timers.tick(1);
+    const secondRun = runUnit(ctx, pi, secondSession, "task", "T02", "prompt");
+
+    mock.timers.tick(29_999);
+    await Promise.resolve();
+    assert.equal(
+      isSessionSwitchInFlight(),
+      true,
+      "late settlement from the first session must not clear the newer session guard",
+    );
+
+    mock.timers.tick(30_001);
+    await Promise.resolve();
+
+    const secondResult = await secondRun;
+    assert.equal(secondResult.status, "cancelled");
+    assert.equal(isSessionSwitchInFlight(), false, "guard should clear after the newer session settles");
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("runUnit returns cancelled when s.active is false before sendMessage", async () => {
@@ -412,7 +453,7 @@ function makeMockDeps(
     getCurrentBranch: () => "main",
     autoWorktreeBranch: () => "auto/M001",
     resolveMilestoneFile: () => null,
-    reconcileMergeState: () => false,
+    reconcileMergeState: () => "clean",
     getLedger: () => null,
     getProjectTotals: () => ({ cost: 0 }),
     formatCost: (c: number) => `$${c.toFixed(2)}`,
