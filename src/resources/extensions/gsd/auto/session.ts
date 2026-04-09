@@ -84,6 +84,9 @@ export class AutoSession {
   // ── Paths ────────────────────────────────────────────────────────────────
   basePath = "";
   originalBasePath = "";
+  previousProjectRootEnv: string | null = null;
+  hadProjectRootEnv = false;
+  projectRootEnvCaptured = false;
   gitService: GitServiceImpl | null = null;
 
   // ── Dispatch counters ────────────────────────────────────────────────────
@@ -192,6 +195,9 @@ export class AutoSession {
     // Paths
     this.basePath = "";
     this.originalBasePath = "";
+    this.previousProjectRootEnv = null;
+    this.hadProjectRootEnv = false;
+    this.projectRootEnvCaptured = false;
     this.gitService = null;
 
     // Dispatch

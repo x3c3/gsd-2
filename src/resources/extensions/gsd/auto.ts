@@ -241,6 +241,29 @@ const s = new AutoSession();
 /** Throttle STATE.md rebuilds — at most once per 30 seconds */
 const STATE_REBUILD_MIN_INTERVAL_MS = 30_000;
 
+function captureProjectRootEnv(projectRoot: string): void {
+  if (!s.projectRootEnvCaptured) {
+    s.hadProjectRootEnv = Object.prototype.hasOwnProperty.call(process.env, "GSD_PROJECT_ROOT");
+    s.previousProjectRootEnv = process.env.GSD_PROJECT_ROOT ?? null;
+    s.projectRootEnvCaptured = true;
+  }
+  process.env.GSD_PROJECT_ROOT = projectRoot;
+}
+
+function restoreProjectRootEnv(): void {
+  if (!s.projectRootEnvCaptured) return;
+
+  if (s.hadProjectRootEnv && s.previousProjectRootEnv !== null) {
+    process.env.GSD_PROJECT_ROOT = s.previousProjectRootEnv;
+  } else {
+    delete process.env.GSD_PROJECT_ROOT;
+  }
+
+  s.previousProjectRootEnv = null;
+  s.hadProjectRootEnv = false;
+  s.projectRootEnvCaptured = false;
+}
+
 export function shouldUseWorktreeIsolation(): boolean {
   const prefs = loadEffectiveGSDPreferences()?.preferences?.git;
   if (prefs?.isolation === "worktree") return true;
@@ -542,6 +565,7 @@ function handleLostSessionLock(
   s.active = false;
   s.paused = false;
   clearUnitTimeout();
+  restoreProjectRootEnv();
   deregisterSigtermHandler();
   clearCmuxSidebar(loadEffectiveGSDPreferences()?.preferences);
   const base = lockBase();
@@ -577,6 +601,7 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   s.currentUnit = null;
   s.active = false;
   clearUnitTimeout();
+  restoreProjectRootEnv();
 
   // Clear crash lock and release session lock so the next `/gsd next` does
   // not see a stale lock with the current PID and treat it as a "remote"
@@ -846,6 +871,7 @@ export async function stopAuto(
     ctx?.ui.setStatus("gsd-auto", undefined);
     ctx?.ui.setWidget("gsd-progress", undefined);
     ctx?.ui.setFooter(undefined);
+    restoreProjectRootEnv();
 
     // Reset all session state in one call
     s.reset();
@@ -934,6 +960,7 @@ export async function pauseAuto(
 
   s.active = false;
   s.paused = true;
+  restoreProjectRootEnv();
   s.pendingVerificationRetry = null;
   s.verificationRetryCount.clear();
   ctx?.ui.setStatus("gsd-auto", "paused");
@@ -1305,6 +1332,7 @@ export async function startAuto(
     );
     logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, s.stepMode ? "Step-mode resumed." : "Auto-mode resumed.", "progress");
 
+    captureProjectRootEnv(s.originalBasePath || s.basePath);
     await autoLoop(ctx, pi, s, buildLoopDeps());
     cleanupAfterLoopExit(ctx);
     return;
@@ -1329,6 +1357,7 @@ export async function startAuto(
   );
   if (!ready) return;
 
+  captureProjectRootEnv(s.originalBasePath || s.basePath);
   try {
     syncCmuxSidebar(loadEffectiveGSDPreferences()?.preferences, await deriveState(s.basePath));
   } catch (err) {
@@ -1569,4 +1598,3 @@ export {
   buildLoopRemediationSteps,
 } from "./auto-recovery.js";
 export { resolveExpectedArtifactPath } from "./auto-artifact-paths.js";
-

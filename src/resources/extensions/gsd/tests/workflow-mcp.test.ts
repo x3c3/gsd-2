@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -68,6 +69,43 @@ test("buildWorkflowMcpServers mirrors explicit launch config", () => {
       },
     },
   });
+});
+
+test("detectWorkflowMcpLaunchConfig resolves the bundled server from GSD_PROJECT_ROOT", () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), "gsd-workflow-root-"));
+  const worktreeRoot = mkdtempSync(join(tmpdir(), "gsd-workflow-worktree-"));
+  const cliPath = join(repoRoot, "packages", "mcp-server", "dist", "cli.js");
+
+  mkdirSync(join(repoRoot, "packages", "mcp-server", "dist"), { recursive: true });
+  writeFileSync(cliPath, "#!/usr/bin/env node\n", "utf-8");
+
+  const launch = detectWorkflowMcpLaunchConfig(worktreeRoot, {
+    GSD_PROJECT_ROOT: repoRoot,
+  });
+
+  assert.deepEqual(launch, {
+    name: "gsd-workflow",
+    command: process.execPath,
+    args: [cliPath],
+    cwd: repoRoot,
+    env: {
+      GSD_PERSIST_WRITE_GATE_STATE: "1",
+      GSD_WORKFLOW_PROJECT_ROOT: repoRoot,
+    },
+  });
+});
+
+test("detectWorkflowMcpLaunchConfig resolves the bundled server relative to the installed GSD package", () => {
+  const launch = detectWorkflowMcpLaunchConfig("/tmp/project", {
+    GSD_BIN_PATH: "/tmp/gsd-loader.js",
+  });
+
+  assert.equal(launch?.command, process.execPath);
+  assert.equal(launch?.cwd, "/tmp/project");
+  assert.equal(launch?.env?.GSD_CLI_PATH, "/tmp/gsd-loader.js");
+  assert.equal(launch?.env?.GSD_WORKFLOW_PROJECT_ROOT, "/tmp/project");
+  assert.equal(typeof launch?.args?.[0], "string");
+  assert.match(launch?.args?.[0] ?? "", /packages[\/\\]mcp-server[\/\\]dist[\/\\]cli\.js$/);
 });
 
 test("usesWorkflowMcpTransport matches local externalCli providers", () => {

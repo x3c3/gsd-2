@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface WorkflowMcpLaunchConfig {
   name: string;
@@ -66,6 +67,15 @@ function lookupCommand(command: string, platform: NodeJS.Platform = process.plat
   }
 }
 
+function getBundledWorkflowMcpCliPath(env: NodeJS.ProcessEnv): string | null {
+  if (!env.GSD_BIN_PATH?.trim() && !env.GSD_CLI_PATH?.trim()) return null;
+
+  const bundledCli = resolve(
+    fileURLToPath(new URL("../../../../packages/mcp-server/dist/cli.js", import.meta.url)),
+  );
+  return existsSync(bundledCli) ? bundledCli : null;
+}
+
 export function detectWorkflowMcpLaunchConfig(
   projectRoot = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
@@ -75,16 +85,19 @@ export function detectWorkflowMcpLaunchConfig(
   const explicitArgs = parseJsonEnv<unknown>(env, "GSD_WORKFLOW_MCP_ARGS");
   const explicitEnv = parseJsonEnv<Record<string, string>>(env, "GSD_WORKFLOW_MCP_ENV");
   const explicitCwd = env.GSD_WORKFLOW_MCP_CWD?.trim();
+  const gsdCliPath = env.GSD_CLI_PATH?.trim() || env.GSD_BIN_PATH?.trim();
   const workflowProjectRoot =
     explicitEnv?.GSD_WORKFLOW_PROJECT_ROOT?.trim() ||
     env.GSD_WORKFLOW_PROJECT_ROOT?.trim() ||
+    env.GSD_PROJECT_ROOT?.trim() ||
     explicitCwd ||
     projectRoot;
+  const resolvedWorkflowProjectRoot = resolve(workflowProjectRoot);
 
   if (explicitCommand) {
     const launchEnv = {
       ...(explicitEnv ?? {}),
-      ...(env.GSD_CLI_PATH ? { GSD_CLI_PATH: env.GSD_CLI_PATH } : {}),
+      ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
       GSD_PERSIST_WRITE_GATE_STATE: "1",
       GSD_WORKFLOW_PROJECT_ROOT: resolve(workflowProjectRoot),
     };
@@ -97,17 +110,32 @@ export function detectWorkflowMcpLaunchConfig(
     };
   }
 
-  const distCli = resolve(projectRoot, "packages", "mcp-server", "dist", "cli.js");
+  const bundledCli = getBundledWorkflowMcpCliPath(env);
+  if (bundledCli) {
+    return {
+      name,
+      command: process.execPath,
+      args: [bundledCli],
+      cwd: resolvedWorkflowProjectRoot,
+      env: {
+        ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
+        GSD_PERSIST_WRITE_GATE_STATE: "1",
+        GSD_WORKFLOW_PROJECT_ROOT: resolvedWorkflowProjectRoot,
+      },
+    };
+  }
+
+  const distCli = resolve(resolvedWorkflowProjectRoot, "packages", "mcp-server", "dist", "cli.js");
   if (existsSync(distCli)) {
     return {
       name,
       command: process.execPath,
       args: [distCli],
-      cwd: projectRoot,
+      cwd: resolvedWorkflowProjectRoot,
       env: {
-        ...(env.GSD_CLI_PATH ? { GSD_CLI_PATH: env.GSD_CLI_PATH } : {}),
+        ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
         GSD_PERSIST_WRITE_GATE_STATE: "1",
-        GSD_WORKFLOW_PROJECT_ROOT: resolve(projectRoot),
+        GSD_WORKFLOW_PROJECT_ROOT: resolvedWorkflowProjectRoot,
       },
     };
   }
@@ -118,9 +146,9 @@ export function detectWorkflowMcpLaunchConfig(
       name,
       command: binPath,
       env: {
-        ...(env.GSD_CLI_PATH ? { GSD_CLI_PATH: env.GSD_CLI_PATH } : {}),
+        ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
         GSD_PERSIST_WRITE_GATE_STATE: "1",
-        GSD_WORKFLOW_PROJECT_ROOT: resolve(projectRoot),
+        GSD_WORKFLOW_PROJECT_ROOT: resolvedWorkflowProjectRoot,
       },
     };
   }
