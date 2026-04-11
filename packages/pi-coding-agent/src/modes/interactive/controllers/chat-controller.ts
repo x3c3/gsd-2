@@ -1,9 +1,10 @@
-import { Loader, Spacer, Text } from "@gsd/pi-tui";
+import { Loader, Markdown, Spacer, Text } from "@gsd/pi-tui";
 
 import type { InteractiveModeEvent, InteractiveModeStateHost } from "../interactive-mode-state.js";
 import { theme } from "../theme/theme.js";
 import { AssistantMessageComponent } from "../components/assistant-message.js";
 import { ToolExecutionComponent } from "../components/tool-execution.js";
+import { DynamicBorder } from "../components/dynamic-border.js";
 import { appKey } from "../components/keybinding-hints.js";
 
 // Tracks the last processed content index to avoid re-scanning all blocks on every message_update
@@ -20,6 +21,15 @@ function hasVisibleAssistantContent(message: { content: Array<any> }): boolean {
 function hasAssistantToolBlocks(message: { content: Array<any> }): boolean {
 	return message.content.some((c) => c.type === "toolCall" || c.type === "serverToolUse");
 }
+
+// Tracks the latest assistant text for the pinned message zone
+let lastPinnedText = "";
+// Whether any tool execution has been added in this assistant turn (triggers pinned display)
+let hasToolsInTurn = false;
+// Reference to the pinned border so we can toggle its label between working/idle
+let pinnedBorder: DynamicBorder | undefined;
+// Reference to the pinned markdown component below the border
+let pinnedTextComponent: Markdown | undefined;
 
 export async function handleAgentEvent(host: InteractiveModeStateHost & {
 	init: () => Promise<void>;
@@ -43,9 +53,15 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 
 	host.footer.invalidate();
 
-	// Reset content index tracker when a new assistant message starts
+	// Reset content index tracker and pinned state when a new assistant message starts
 	if (event.type === "message_start" && event.message.role === "assistant") {
 		lastProcessedContentIndex = 0;
+		lastPinnedText = "";
+		hasToolsInTurn = false;
+		if (pinnedBorder) pinnedBorder.stopSpinner();
+		pinnedBorder = undefined;
+		pinnedTextComponent = undefined;
+		host.pinnedMessageContainer.clear();
 	}
 
 	switch (event.type) {
@@ -58,6 +74,12 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					host.streamingMessage = undefined;
 					host.pendingTools.clear();
 					host.pendingMessagesContainer.clear();
+					host.pinnedMessageContainer.clear();
+					lastPinnedText = "";
+					hasToolsInTurn = false;
+					if (pinnedBorder) pinnedBorder.stopSpinner();
+					pinnedBorder = undefined;
+					pinnedTextComponent = undefined;
 					host.compactionQueuedMessages = [];
 					host.rebuildChatFromMessages();
 					host.updatePendingMessagesDisplay();
@@ -255,6 +277,59 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				if (contentBlocks.length > 0) {
 					lastProcessedContentIndex = Math.max(0, contentBlocks.length - 1);
 				}
+
+				// Pinned message: mirror the latest assistant text above the editor
+				// when tool executions push it out of the viewport.
+				const hasTools = contentBlocks.some(
+					(c: any) => c.type === "toolCall" || c.type === "serverToolUse",
+				);
+				if (hasTools) hasToolsInTurn = true;
+
+				if (hasToolsInTurn) {
+					// Collect the latest text block(s) from the assistant message
+					let latestText = "";
+					for (let i = contentBlocks.length - 1; i >= 0; i--) {
+						const c = contentBlocks[i] as any;
+						if (c.type === "text" && c.text?.trim()) {
+							latestText = c.text.trim();
+							break;
+						}
+					}
+
+					if (latestText && latestText !== lastPinnedText) {
+						lastPinnedText = latestText;
+
+						if (!pinnedBorder) {
+							// First time: create border + text component
+							host.pinnedMessageContainer.clear();
+							pinnedBorder = new DynamicBorder(
+								(str: string) => theme.fg("dim", str),
+								"Working · Latest Output",
+							);
+							pinnedBorder.startSpinner(host.ui, (str: string) => theme.fg("accent", str));
+							host.pinnedMessageContainer.addChild(pinnedBorder);
+							pinnedTextComponent = new Markdown(latestText, 1, 0, host.getMarkdownThemeWithSettings());
+							// Cap pinned content to ~40% of terminal height so tall output
+							// doesn't exceed the viewport and cause render flashing.
+							pinnedTextComponent.maxLines = Math.max(3, Math.floor(host.ui.terminal.rows * 0.4));
+							host.pinnedMessageContainer.addChild(pinnedTextComponent);
+							// Hide the separate status loader — the pinned zone replaces it
+							if (host.loadingAnimation) {
+								host.loadingAnimation.stop();
+								host.loadingAnimation = undefined;
+							}
+							host.statusContainer.clear();
+						} else {
+							// Update existing markdown component in-place
+							pinnedTextComponent?.setText(latestText);
+							// Refresh maxLines in case terminal was resized
+							if (pinnedTextComponent) {
+								pinnedTextComponent.maxLines = Math.max(3, Math.floor(host.ui.terminal.rows * 0.4));
+							}
+						}
+					}
+				}
+
 				host.ui.requestRender();
 			}
 			break;
@@ -357,6 +432,16 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				host.streamingMessage = undefined;
 			}
 			host.pendingTools.clear();
+			// Stop spinner on pinned border and switch label from "Working · Latest Output" to "Latest Output"
+			if (pinnedBorder) {
+				pinnedBorder.stopSpinner();
+				pinnedBorder.setLabel("Latest Output");
+			}
+			// Keep pinned message visible until the next assistant turn starts.
+			lastPinnedText = "";
+			hasToolsInTurn = false;
+			pinnedBorder = undefined;
+			pinnedTextComponent = undefined;
 			await host.checkShutdownRequested();
 			host.ui.requestRender();
 			break;
