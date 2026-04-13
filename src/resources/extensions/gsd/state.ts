@@ -58,7 +58,7 @@ import {
   insertSlice,
   insertTask,
   updateTaskStatus,
-  getPendingSliceGateCount,
+  getPendingGateCountForTurn,
   type MilestoneRow,
   type SliceRow,
   type TaskRow,
@@ -864,7 +864,18 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     }
   }
 
-  const pendingGateCount = getPendingSliceGateCount(activeMilestone.id, activeSlice.id);
+  // ── Quality gate evaluation check ──────────────────────────────────
+  // Pause before execution only when gates owned by the `gate-evaluate`
+  // turn (Q3/Q4) are still pending. Q8 is also `scope:"slice"` but is
+  // owned by `complete-slice`, so it must NOT block the evaluating-gates
+  // phase — otherwise auto-loop stalls forever waiting for a gate that
+  // this turn never evaluates. See gate-registry.ts for the ownership map.
+  // Slices with zero gate rows (pre-feature or simple) skip straight through.
+  const pendingGateCount = getPendingGateCountForTurn(
+    activeMilestone.id,
+    activeSlice.id,
+    "gate-evaluate",
+  );
   if (pendingGateCount > 0) {
     return {
       activeMilestone, activeSlice, activeTask: null,

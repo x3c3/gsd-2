@@ -10,6 +10,7 @@ import { existsSync, copyFileSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Decision, Requirement, GateRow, GateId, GateScope, GateStatus, GateVerdict } from "./types.js";
 import { GSDError, GSD_STALE_STATE } from "./errors.js";
+import { getGateIdsForTurn, type OwnerTurn } from "./gate-registry.js";
 import { logError, logWarning } from "./workflow-logger.js";
 
 const _require = createRequire(import.meta.url);
@@ -2301,4 +2302,54 @@ export function getPendingSliceGateCount(milestoneId: string, sliceId: string): 
      WHERE milestone_id = :mid AND slice_id = :sid AND scope = 'slice' AND status = 'pending'`,
   ).get({ ":mid": milestoneId, ":sid": sliceId });
   return row ? (row["cnt"] as number) : 0;
+}
+
+/**
+ * Return pending gate rows owned by a specific workflow turn.
+ *
+ * Unlike `getPendingGates(..., scope)`, this filters by the registry's
+ * `ownerTurn` metadata so callers can distinguish Q3/Q4 (owned by
+ * gate-evaluate) from Q8 (owned by complete-slice) even though both are
+ * scope:"slice". Pass `taskId` to narrow task-scoped results to one task.
+ */
+export function getPendingGatesForTurn(
+  milestoneId: string,
+  sliceId: string,
+  turn: OwnerTurn,
+  taskId?: string,
+): GateRow[] {
+  if (!currentDb) return [];
+  const ids = getGateIdsForTurn(turn);
+  if (ids.size === 0) return [];
+  const idList = [...ids];
+  const placeholders = idList.map((_, i) => `:gid${i}`).join(",");
+  const params: Record<string, unknown> = {
+    ":mid": milestoneId,
+    ":sid": sliceId,
+  };
+  idList.forEach((id, i) => {
+    params[`:gid${i}`] = id;
+  });
+  let sql =
+    `SELECT * FROM quality_gates
+     WHERE milestone_id = :mid AND slice_id = :sid
+       AND status = 'pending'
+       AND gate_id IN (${placeholders})`;
+  if (taskId !== undefined) {
+    sql += ` AND task_id = :tid`;
+    params[":tid"] = taskId;
+  }
+  return currentDb.prepare(sql).all(params).map(rowToGate);
+}
+
+/**
+ * Count pending gates for a turn. Convenience wrapper used by state
+ * derivation to decide whether a phase transition should pause.
+ */
+export function getPendingGateCountForTurn(
+  milestoneId: string,
+  sliceId: string,
+  turn: OwnerTurn,
+): number {
+  return getPendingGatesForTurn(milestoneId, sliceId, turn).length;
 }
