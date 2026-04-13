@@ -17,7 +17,6 @@ import { initResources, buildResourceLoader, getNewerManagedResourceVersion } fr
 import { ensureManagedTools } from './tool-bootstrap.js'
 import { loadStoredEnvKeys } from './wizard.js'
 import { migratePiCredentials, getPiDefaultModelAndProvider } from './pi-migration.js'
-import { shouldMigrateAnthropicToClaudeCode } from './provider-migrations.js'
 import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
 import { checkForUpdates } from './update-check.js'
@@ -532,29 +531,6 @@ if (isPrintMode) {
   })
   markStartup('createAgentSession')
 
-  // Migrate anthropic OAuth users to claude-code provider when CLI is available (#3772).
-  // Anthropic blocks third-party apps from using subscription quotas — routing through
-  // the local claude CLI binary is TOS-compliant.
-  if (shouldMigrateAnthropicToClaudeCode({
-    authStorage,
-    isClaudeCodeReady: modelRegistry.isProviderRequestReady('claude-code'),
-    defaultProvider: settingsManager.getDefaultProvider(),
-  })) {
-    const currentModelId = settingsManager.getDefaultModel()
-    if (currentModelId) {
-      const ccModel = modelRegistry.find('claude-code', currentModelId)
-      if (ccModel) {
-        try {
-          await session.setModel(ccModel)
-          // Only persist after successful session switch to avoid desync
-          settingsManager.setDefaultModelAndProvider('claude-code', currentModelId)
-        } catch {
-          // claude-code provider not ready — leave both session and settings unchanged
-        }
-      }
-    }
-  }
-
   // Validate configured model AFTER extensions have registered their models (#2626).
   // Before this, extension-provided models (e.g. claude-code/*) were not yet in the
   // registry, causing the user's valid choice to be silently overwritten.
@@ -743,29 +719,6 @@ const { session, extensionsResult, modelFallbackMessage: interactiveFallbackMsg 
   isClaudeCodeReady: () => modelRegistry.isProviderRequestReady('claude-code'),
 })
 markStartup('createAgentSession')
-
-// Migrate anthropic OAuth users to claude-code provider when CLI is available (#3772).
-// Anthropic blocks third-party apps from using subscription quotas — routing through
-// the local claude CLI binary is TOS-compliant.
-if (shouldMigrateAnthropicToClaudeCode({
-  authStorage,
-  isClaudeCodeReady: modelRegistry.isProviderRequestReady('claude-code'),
-  defaultProvider: settingsManager.getDefaultProvider(),
-})) {
-  const currentModelId = settingsManager.getDefaultModel()
-  if (currentModelId) {
-    const ccModel = modelRegistry.find('claude-code', currentModelId)
-    if (ccModel) {
-      try {
-        await session.setModel(ccModel)
-        // Only persist after successful session switch to avoid desync
-        settingsManager.setDefaultModelAndProvider('claude-code', currentModelId)
-      } catch {
-        // claude-code provider not ready — leave both session and settings unchanged
-      }
-    }
-  }
-}
 
 // Validate configured model AFTER extensions have registered their models (#2626).
 // Before this, extension-provided models (e.g. claude-code/*) were not yet in the
