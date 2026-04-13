@@ -369,7 +369,16 @@ describe("stream-adapter — session persistence (#2859)", () => {
 			assert.equal(srv.env.GSD_PERSIST_WRITE_GATE_STATE, "1");
 			assert.equal(srv.env.GSD_WORKFLOW_PROJECT_ROOT, "/tmp/project");
 			assert.deepEqual(options.disallowedTools, ["AskUserQuestion"]);
-			assert.deepEqual(options.allowedTools, ["mcp__gsd-workflow__*"]);
+			assert.deepEqual(options.allowedTools, [
+				"Read",
+				"Write",
+				"Edit",
+				"Glob",
+				"Grep",
+				"Bash(ls:*)",
+				"Bash(pwd)",
+				"mcp__gsd-workflow__*",
+			]);
 		} finally {
 			process.env.GSD_WORKFLOW_MCP_COMMAND = prev.GSD_WORKFLOW_MCP_COMMAND;
 			process.env.GSD_WORKFLOW_MCP_NAME = prev.GSD_WORKFLOW_MCP_NAME;
@@ -398,7 +407,16 @@ describe("stream-adapter — session persistence (#2859)", () => {
 			const mcpServers = options.mcpServers as Record<string, any>;
 			assert.ok(mcpServers?.["custom-workflow"], "expected custom workflow server config");
 			assert.deepEqual(options.disallowedTools, ["AskUserQuestion"]);
-			assert.deepEqual(options.allowedTools, ["mcp__custom-workflow__*"]);
+			assert.deepEqual(options.allowedTools, [
+				"Read",
+				"Write",
+				"Edit",
+				"Glob",
+				"Grep",
+				"Bash(ls:*)",
+				"Bash(pwd)",
+				"mcp__custom-workflow__*",
+			]);
 		} finally {
 			process.env.GSD_WORKFLOW_MCP_COMMAND = prev.GSD_WORKFLOW_MCP_COMMAND;
 			process.env.GSD_WORKFLOW_MCP_NAME = prev.GSD_WORKFLOW_MCP_NAME;

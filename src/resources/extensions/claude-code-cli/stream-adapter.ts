@@ -562,15 +562,18 @@ export function makeAbortedMessage(model: string, lastTextContent: string): Assi
 /**
  * Resolve the Claude Code permission mode for the current run.
  *
- * - Auto-mode / headless runs bypass permissions so tool calls don't block
- *   on prompts the user isn't watching.
- * - Interactive runs default to `acceptEdits` so file/bash writes still
- *   land quickly but the SDK retains a permission gate.
- * - `GSD_CLAUDE_CODE_PERMISSION_MODE` forces a specific mode when set.
+ * GSD subagents run underneath a host Claude Code session the user has
+ * already consented to, and their work (edits, shell inspection, MCP calls)
+ * spans the full workflow toolset. Defaulting the inner SDK to
+ * `bypassPermissions` avoids per-tool approval prompts that offer no
+ * meaningful safety beyond what the host session and the subagent prompts
+ * already enforce. `GSD_CLAUDE_CODE_PERMISSION_MODE` lets security-conscious
+ * users opt into a stricter mode (`acceptEdits`, `default`, `plan`).
  *
- * Cross-extension coupling is kept minimal by dynamically importing
- * `isAutoActive` and falling back to the bypass default if the import
- * fails (e.g. in unit tests that load stream-adapter in isolation).
+ * Tradeoff: bypass means a prompt-injection payload read from an untrusted
+ * file could trigger tool calls without a second gate. Accepted for GSD
+ * because the workflow is explicit user intent and the alternative
+ * (#4099) is continuous approval fatigue that blocks real work.
  */
 export async function resolveClaudePermissionMode(
 	env: NodeJS.ProcessEnv = process.env,
@@ -579,17 +582,7 @@ export async function resolveClaudePermissionMode(
 	if (override === "bypassPermissions" || override === "acceptEdits" || override === "default" || override === "plan") {
 		return override;
 	}
-
-	try {
-		const autoMod = (await import("../gsd/auto.js")) as { isAutoActive?: () => boolean };
-		if (typeof autoMod.isAutoActive === "function" && autoMod.isAutoActive()) {
-			return "bypassPermissions";
-		}
-		return "acceptEdits";
-	} catch {
-		// auto.ts unavailable (tests, non-GSD contexts) — stay permissive.
-		return "bypassPermissions";
-	}
+	return "bypassPermissions";
 }
 
 /**
@@ -612,13 +605,21 @@ export function buildSdkOptions(
 	const mcpServers = buildWorkflowMcpServers();
 	const permissionMode = overrides?.permissionMode ?? "bypassPermissions";
 	const disallowedTools = ["AskUserQuestion"];
-	// Pre-authorize every registered workflow MCP server's tools. Without this,
-	// `acceptEdits` mode (the interactive default) auto-approves built-in
-	// Edit/Write/Bash but still gates MCP calls like `mcp__gsd-workflow__*`,
-	// surfacing "This command requires approval" on every GSD action (#4099).
-	const allowedTools = mcpServers
-		? Object.keys(mcpServers).map((serverName) => `mcp__${serverName}__*`)
-		: [];
+	// Pre-authorize the safe built-ins and every registered workflow MCP
+	// server's tools. `acceptEdits` mode (the interactive default) only
+	// auto-approves file edits — Read/Glob/Grep, basic shell inspection, and
+	// every `mcp__gsd-workflow__*` call still surface as "This command
+	// requires approval" and block GSD actions (#4099).
+	const allowedTools = [
+		"Read",
+		"Write",
+		"Edit",
+		"Glob",
+		"Grep",
+		"Bash(ls:*)",
+		"Bash(pwd)",
+		...(mcpServers ? Object.keys(mcpServers).map((serverName) => `mcp__${serverName}__*`) : []),
+	];
 	return {
 		pathToClaudeCodeExecutable: getClaudePath(),
 		model: modelId,
