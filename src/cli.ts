@@ -16,14 +16,15 @@ import { agentDir, sessionsDir, authFilePath } from './app-paths.js'
 import { initResources, buildResourceLoader, getNewerManagedResourceVersion } from './resource-loader.js'
 import { ensureManagedTools } from './tool-bootstrap.js'
 import { loadStoredEnvKeys } from './wizard.js'
-import { migratePiCredentials, getPiDefaultModelAndProvider } from './pi-migration.js'
+import { migratePiCredentials } from './pi-migration.js'
 import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
 import { checkForUpdates } from './update-check.js'
-import { printHelp, printSubcommandHelp } from './help-text.js'
+import { printSubcommandHelp } from './help-text.js'
 import { applySecurityOverrides } from './security-overrides.js'
+import { validateConfiguredModel } from './startup-model-validation.js'
 import {
-  parseCliArgs as parseWebCliArgs,
+  parseCliArgs,
   runWebCliBranch,
   migrateLegacyFlatSessions,
 } from './cli-web-branch.js'
@@ -42,28 +43,6 @@ if (parseInt(process.versions.node) >= 22) {
   process.env.NODE_COMPILE_CACHE ??= join(agentDir, '.compile-cache')
 }
 
-// ---------------------------------------------------------------------------
-// Minimal CLI arg parser — detects print/subagent mode flags
-// ---------------------------------------------------------------------------
-interface CliFlags {
-  mode?: 'text' | 'json' | 'rpc' | 'mcp'
-  print?: boolean
-  continue?: boolean
-  noSession?: boolean
-  worktree?: boolean | string
-  model?: string
-  listModels?: string | true
-  extensions: string[]
-  appendSystemPrompt?: string
-  tools?: string[]
-  messages: string[]
-  web?: boolean
-  webPath?: string
-
-  /** Set by `gsd sessions` when the user picks a specific session to resume */
-  _selectedSessionPath?: string
-}
-
 function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
   const currentVersion = process.env.GSD_VERSION || '0.0.0'
   const managedVersion = getNewerManagedResourceVersion(currentAgentDir, currentVersion)
@@ -79,123 +58,97 @@ function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
   process.exit(1)
 }
 
-function parseCliArgs(argv: string[]): CliFlags {
-  const flags: CliFlags = { extensions: [], messages: [] }
-  const args = argv.slice(2) // skip node + script
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-    if (arg === '--mode' && i + 1 < args.length) {
-      const m = args[++i]
-      if (m === 'text' || m === 'json' || m === 'rpc' || m === 'mcp') flags.mode = m
-    } else if (arg === '--print' || arg === '-p') {
-      flags.print = true
-    } else if (arg === '--continue' || arg === '-c') {
-      flags.continue = true
-    } else if (arg === '--no-session') {
-      flags.noSession = true
-    } else if (arg === '--model' && i + 1 < args.length) {
-      flags.model = args[++i]
-    } else if (arg === '--extension' && i + 1 < args.length) {
-      flags.extensions.push(args[++i])
-    } else if (arg === '--append-system-prompt' && i + 1 < args.length) {
-      flags.appendSystemPrompt = args[++i]
-    } else if (arg === '--tools' && i + 1 < args.length) {
-      flags.tools = args[++i].split(',')
-    } else if (arg === '--list-models') {
-      flags.listModels = (i + 1 < args.length && !args[i + 1].startsWith('-')) ? args[++i] : true
-    } else if (arg === '--version' || arg === '-v') {
-      process.stdout.write((process.env.GSD_VERSION || '0.0.0') + '\n')
-      process.exit(0)
-    } else if (arg === '--worktree' || arg === '-w') {
-      // -w with no value → auto-generate name; -w <name> → use that name
-      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
-        flags.worktree = args[++i]
-      } else {
-        flags.worktree = true
-      }
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp(process.env.GSD_VERSION || '0.0.0')
-      process.exit(0)
-    } else if (arg === '--web') {
-      flags.web = true
-      // Capture optional project path after --web (not a flag)
-      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
-        flags.webPath = args[++i]
-      }
-    } else if (!arg.startsWith('--') && !arg.startsWith('-')) {
-      flags.messages.push(arg)
-    }
+// ---------------------------------------------------------------------------
+// Shared helpers used by both the print and interactive code paths
+// ---------------------------------------------------------------------------
+
+/**
+ * Print the non-interactive-mode error and exit. Called both from the early
+ * TTY gate (before heavy init) and from the interactive-mode TTY gate right
+ * before `InteractiveMode.run()`. The `includeWebHint` variant also lists
+ * `--web` and `headless` as alternatives.
+ */
+function printNonTtyErrorAndExit(missing: string | undefined, includeWebHint: boolean): never {
+  const suffix = missing ? ` but ${missing} not a TTY` : ''
+  process.stderr.write(`[gsd] Error: Interactive mode requires a terminal (TTY)${suffix}.\n`)
+  process.stderr.write('[gsd] Non-interactive alternatives:\n')
+  process.stderr.write('[gsd]   gsd auto                       Auto-mode (pipeable, no TUI)\n')
+  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
+  if (includeWebHint) {
+    process.stderr.write('[gsd]   gsd --web [path]               Browser-only web mode\n')
   }
-  return flags
+  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
+  if (includeWebHint) {
+    process.stderr.write('[gsd]   gsd headless                   Auto-mode without TUI\n')
+  }
+  process.exit(1)
 }
 
 /**
- * Validate the configured default model against the registry and reset it if
- * it no longer exists.  Must run AFTER extensions have registered their
- * providers so that extension models (e.g. pi-claude-cli) are visible.
+ * Print extension load/conflict errors from an extensions result. Downgrades
+ * conflicts with built-in tools to warnings (#1347).
  */
-function validateConfiguredModel(
+function printExtensionErrors(errors: ReadonlyArray<{ error: string }>): void {
+  for (const err of errors) {
+    const isConflict = err.error.includes('supersedes') || err.error.includes('conflicts with')
+    const prefix = isConflict ? 'Extension conflict' : 'Extension load error'
+    process.stderr.write(`[gsd] ${prefix}: ${err.error}\n`)
+  }
+}
+
+/**
+ * Re-apply the validated model to the session when `createAgentSession()`
+ * reports that it had to use a fallback. Prevents silently overriding the
+ * persisted model of resumed conversations (#3534).
+ */
+async function reapplyValidatedModelOnFallback(
+  session: { setModel(model: { provider: string; id: string }): unknown | Promise<unknown> },
   modelRegistry: ModelRegistry,
   settingsManager: SettingsManager,
-): void {
-  const configuredProvider = settingsManager.getDefaultProvider()
-  const configuredModel = settingsManager.getDefaultModel()
-  const allModels = modelRegistry.getAll()
-  const availableModels = modelRegistry.getAvailable()
-  const configuredExists = configuredProvider && configuredModel &&
-    allModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
-  const configuredAvailable = configuredProvider && configuredModel &&
-    availableModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
-
-  if (!configuredModel || !configuredExists) {
-    // Model not configured at all, or removed from registry — pick a fallback.
-    // Only fires when the model is genuinely unknown (not just temporarily unavailable).
-    const piDefault = getPiDefaultModelAndProvider()
-    const preferred =
-      (piDefault
-        ? availableModels.find((m) => m.provider === piDefault.provider && m.id === piDefault.model)
-        : undefined) ||
-      availableModels.find((m) => m.provider === 'openai' && m.id === 'gpt-5.4') ||
-      availableModels.find((m) => m.provider === 'openai') ||
-      availableModels.find((m) => m.provider === 'anthropic' && m.id === 'claude-opus-4-6') ||
-      availableModels.find((m) => m.provider === 'anthropic' && m.id.includes('opus')) ||
-      availableModels.find((m) => m.provider === 'anthropic') ||
-      availableModels[0]
-    if (preferred) {
-      settingsManager.setDefaultModelAndProvider(preferred.provider, preferred.id)
-    }
-  }
-
-  if (settingsManager.getDefaultThinkingLevel() !== 'off' && !configuredExists) {
-    settingsManager.setDefaultThinkingLevel('off')
+  fallbackMessage: string | undefined,
+): Promise<void> {
+  if (!fallbackMessage) return
+  const validatedProvider = settingsManager.getDefaultProvider()
+  const validatedModelId = settingsManager.getDefaultModel()
+  if (!validatedProvider || !validatedModelId) return
+  const correctModel = modelRegistry.getAvailable()
+    .find((m) => m.provider === validatedProvider && m.id === validatedModelId)
+  if (!correctModel) return
+  try {
+    await session.setModel(correctModel)
+  } catch {
+    // Provider not ready — leave session on its current model
   }
 }
 
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
-// Early resource-skew check — must run before TTY gate so version mismatch
-// errors surface even in non-TTY environments.
-async function ensureRtkBootstrap(): Promise<void> {
-  if ((ensureRtkBootstrap as { _done?: boolean })._done) return
-
+// RTK bootstrap — runs once per process, memoized via a module-level promise
+// so concurrent callers await the same initialization.
+let rtkBootstrapPromise: Promise<void> | undefined
+async function doRtkBootstrap(): Promise<void> {
   // RTK is opt-in via experimental.rtk preference. Default: disabled.
   // Honor GSD_RTK_DISABLED if already explicitly set in the environment
   // (env var takes precedence over preferences for manual override).
   if (!process.env[GSD_RTK_DISABLED_ENV]) {
-    const prefs = loadEffectiveGSDPreferences();
-    const rtkEnabled = prefs?.preferences.experimental?.rtk === true;
+    const prefs = loadEffectiveGSDPreferences()
+    const rtkEnabled = prefs?.preferences.experimental?.rtk === true
     if (!rtkEnabled) {
-      process.env[GSD_RTK_DISABLED_ENV] = "1";
+      process.env[GSD_RTK_DISABLED_ENV] = '1'
     }
   }
 
   const rtkStatus = await bootstrapRtk()
-  ;(ensureRtkBootstrap as { _done?: boolean })._done = true
   markStartup('bootstrapRtk')
   if (!rtkStatus.available && rtkStatus.supported && rtkStatus.enabled && rtkStatus.reason) {
     process.stderr.write(`[gsd] Warning: RTK unavailable — continuing without shell-command compression (${rtkStatus.reason}).\n`)
   }
+}
+function ensureRtkBootstrap(): Promise<void> {
+  return (rtkBootstrapPromise ??= doRtkBootstrap())
 }
 
 // `gsd update` — update to the latest version via npm
@@ -211,14 +164,7 @@ exitIfManagedResourcesAreNewer(agentDir)
 // handles that prevent process.exit() from completing promptly.
 const hasSubcommand = cliFlags.messages.length > 0
 if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels && !cliFlags.web) {
-  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
-  process.stderr.write('[gsd] Non-interactive alternatives:\n')
-  process.stderr.write('[gsd]   gsd auto                       Auto-mode (pipeable, no TUI)\n')
-  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
-  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
-  process.exit(1)
+  printNonTtyErrorAndExit(undefined, false)
 }
 
 // `gsd <subcommand> --help` — show subcommand-specific help
@@ -252,8 +198,7 @@ if (cliFlags.messages[0] === 'config') {
 
 // `gsd web stop [path|all]` — stop web server before anything else
 if (cliFlags.messages[0] === 'web' && cliFlags.messages[1] === 'stop') {
-  const webFlags = parseWebCliArgs(process.argv)
-  const webBranch = await runWebCliBranch(webFlags, {
+  const webBranch = await runWebCliBranch(cliFlags, {
     stopWebMode,
     stderr: process.stderr,
     baseSessionsDir: sessionsDir,
@@ -267,8 +212,7 @@ if (cliFlags.messages[0] === 'web' && cliFlags.messages[1] === 'stop') {
 // `gsd --web [path]` or `gsd web [start] [path]` — launch browser-only web mode
 if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 'stop')) {
   await ensureRtkBootstrap()
-  const webFlags = parseWebCliArgs(process.argv)
-  const webBranch = await runWebCliBranch(webFlags, {
+  const webBranch = await runWebCliBranch(cliFlags, {
     stderr: process.stderr,
     baseSessionsDir: sessionsDir,
     agentDir,
@@ -356,21 +300,24 @@ if (cliFlags.messages[0] === 'headless') {
   process.exit(0)
 }
 
+/**
+ * Run a headless command by invoking the headless entrypoint with a synthetic
+ * argv. Shared by the `auto` shorthand (#2732) and the auto-piped-stdout
+ * redirect so they use the same bootstrap + dynamic-import dance.
+ */
+async function runHeadlessFromAuto(headlessArgs: string[]): Promise<never> {
+  await ensureRtkBootstrap()
+  const { runHeadless, parseHeadlessArgs } = await import('./headless.js')
+  const argv = [process.argv[0], process.argv[1], 'headless', ...headlessArgs]
+  await runHeadless(parseHeadlessArgs(argv))
+  process.exit(0)
+}
+
 // `gsd auto [args...]` — shorthand for `gsd headless auto [args...]` (#2732)
 // Without this, `gsd auto` falls through to the interactive TUI which hangs
 // when stdin/stdout are piped (non-TTY environments).
 if (cliFlags.messages[0] === 'auto') {
-  await ensureRtkBootstrap()
-  const { runHeadless, parseHeadlessArgs } = await import('./headless.js')
-  // Rewrite argv so parseHeadlessArgs sees: [node, gsd, headless, auto, ...rest]
-  const rewrittenArgv = [
-    process.argv[0],
-    process.argv[1],
-    'headless',
-    ...cliFlags.messages,   // ['auto', ...extra args]
-  ]
-  await runHeadless(parseHeadlessArgs(rewrittenArgv))
-  process.exit(0)
+  await runHeadlessFromAuto(cliFlags.messages)
 }
 
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems
@@ -535,39 +482,8 @@ if (isPrintMode) {
   // Before this, extension-provided models (e.g. claude-code/*) were not yet in the
   // registry, causing the user's valid choice to be silently overwritten.
   validateConfiguredModel(modelRegistry, settingsManager)
-
-  // Re-apply the validated model to the session only when findInitialModel() used a
-  // fallback (not when restoring an existing session's model). This prevents silently
-  // overriding the persisted model of resumed conversations (#3534).
-  if (modelFallbackMessage) {
-    const validatedProvider = settingsManager.getDefaultProvider()
-    const validatedModelId = settingsManager.getDefaultModel()
-    if (validatedProvider && validatedModelId) {
-      const correctModel = modelRegistry.getAvailable()
-        .find((m) => m.provider === validatedProvider && m.id === validatedModelId)
-      if (correctModel) {
-        try {
-          await session.setModel(correctModel)
-        } catch {
-          // Provider not ready — leave session on its current model
-        }
-      }
-    }
-  }
-
-  if (extensionsResult.errors.length > 0) {
-    for (const err of extensionsResult.errors) {
-      // Downgrade conflicts with built-in tools to warnings (#1347)
-      const isConflict = err.error.includes("supersedes") || err.error.includes("conflicts with");
-      const prefix = isConflict ? "Extension conflict" : "Extension load error";
-      process.stderr.write(`[gsd] ${prefix}: ${err.error}\n`)
-    }
-  }
-
-  // Validate configured model now that extension providers are registered.
-  // Must run after createAgentSession() which flushes pendingProviderRegistrations
-  // so extension models (e.g. pi-claude-cli) are visible in the registry.
-  validateConfiguredModel(modelRegistry, settingsManager)
+  await reapplyValidatedModelOnFallback(session, modelRegistry, settingsManager, modelFallbackMessage)
+  printExtensionErrors(extensionsResult.errors)
 
   // Apply --model override if specified
   if (cliFlags.model) {
@@ -666,11 +582,8 @@ if (!cliFlags.worktree && !isPrintMode) {
 // which handles non-interactive output gracefully.
 // ---------------------------------------------------------------------------
 if (cliFlags.messages[0] === 'auto' && !process.stdout.isTTY) {
-  await ensureRtkBootstrap()
-  const { runHeadless, parseHeadlessArgs } = await import('./headless.js')
   process.stderr.write('[gsd] stdout is not a terminal — running auto-mode in headless mode.\n')
-  await runHeadless(parseHeadlessArgs(['node', 'gsd', 'headless', ...cliFlags.messages.slice(1)]))
-  process.exit(0)
+  await runHeadlessFromAuto(cliFlags.messages.slice(1))
 }
 
 // ---------------------------------------------------------------------------
@@ -724,38 +637,8 @@ markStartup('createAgentSession')
 // Before this, extension-provided models (e.g. claude-code/*) were not yet in the
 // registry, causing the user's valid choice to be silently overwritten.
 validateConfiguredModel(modelRegistry, settingsManager)
-
-// Re-apply the validated model to the session only when findInitialModel() used a
-// fallback (not when restoring an existing session's model). This prevents silently
-// overriding the persisted model of resumed conversations (#3534).
-if (interactiveFallbackMsg) {
-  const validatedProvider = settingsManager.getDefaultProvider()
-  const validatedModelId = settingsManager.getDefaultModel()
-  if (validatedProvider && validatedModelId) {
-    const correctModel = modelRegistry.getAvailable()
-      .find((m) => m.provider === validatedProvider && m.id === validatedModelId)
-    if (correctModel) {
-      try {
-        await session.setModel(correctModel)
-      } catch {
-        // Provider not ready — leave session on its current model
-      }
-    }
-  }
-}
-
-if (extensionsResult.errors.length > 0) {
-  for (const err of extensionsResult.errors) {
-    const isConflict = err.error.includes("supersedes") || err.error.includes("conflicts with");
-    const prefix = isConflict ? "Extension conflict" : "Extension load error";
-    process.stderr.write(`[gsd] ${prefix}: ${err.error}\n`)
-  }
-}
-
-// Validate configured model now that extension providers are registered.
-// Must run after createAgentSession() which flushes pendingProviderRegistrations
-// so extension models (e.g. pi-claude-cli) are visible in the registry.
-validateConfiguredModel(modelRegistry, settingsManager)
+await reapplyValidatedModelOnFallback(session, modelRegistry, settingsManager, interactiveFallbackMsg)
+printExtensionErrors(extensionsResult.errors)
 
 // Restore scoped models from settings on startup.
 // The upstream InteractiveMode reads enabledModels from settings when /scoped-models is opened,
@@ -806,16 +689,7 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
     : !process.stdin.isTTY
       ? 'stdin is'
       : 'stdout is'
-  process.stderr.write(`[gsd] Error: Interactive mode requires a terminal (TTY) but ${missing} not a TTY.\n`)
-  process.stderr.write('[gsd] Non-interactive alternatives:\n')
-  process.stderr.write('[gsd]   gsd auto                       Auto-mode (pipeable, no TUI)\n')
-  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
-  process.stderr.write('[gsd]   gsd --web [path]               Browser-only web mode\n')
-  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
-  process.stderr.write('[gsd]   gsd headless                   Auto-mode without TUI\n')
-  process.exit(1)
+  printNonTtyErrorAndExit(missing, true)
 }
 
 // Welcome screen — shown on every fresh interactive session before TUI takes over.
