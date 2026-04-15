@@ -1,4 +1,4 @@
-import type { TaskMetadata } from "../model-router.js";
+import type { TaskMetadata } from "../complexity-classifier.js";
 import { computeTaskRequirements, filterToolsForProvider } from "../model-router.js";
 import { buildAuditEnvelope, emitUokAuditEvent } from "./audit.js";
 
@@ -33,11 +33,11 @@ export function buildRequirementVector(unitType?: string, taskMetadata?: TaskMet
   return computeTaskRequirements(unitType, taskMetadata) as unknown as Partial<Record<string, number>>;
 }
 
-export function applyModelPolicyFilter(
-  candidates: ModelCandidate[],
+export function applyModelPolicyFilter<T extends ModelCandidate>(
+  candidates: T[],
   options: ModelPolicyOptions,
 ): {
-  eligible: ModelCandidate[];
+  eligible: T[];
   decisions: ModelPolicyDecision[];
   requirements: Partial<Record<string, number>>;
 } {
@@ -46,7 +46,7 @@ export function applyModelPolicyFilter(
   const allowedApis = options.allowedApis ? new Set(options.allowedApis) : null;
   const requirements = buildRequirementVector(options.unitType, options.taskMetadata);
   const decisions: ModelPolicyDecision[] = [];
-  const eligible: ModelCandidate[] = [];
+  const eligible: T[] = [];
 
   for (const model of candidates) {
     let allowed = true;

@@ -135,7 +135,7 @@ export async function autoLoop(
     let turnFinished = false;
     const finishTurn = (
       status: "completed" | "failed" | "paused" | "stopped" | "skipped" | "retry",
-      failureClass: "none" | "unknown" | "manual-attention" | "timeout" | "execution" = "none",
+      failureClass: "none" | "unknown" | "manual-attention" | "timeout" | "execution" | "closeout" = "none",
       error?: string,
     ): void => {
       if (turnFinished) return;
