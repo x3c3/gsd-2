@@ -758,3 +758,255 @@ test("/gsd debug S04: specialist review persists through continue with disk relo
     rmSync(base, { recursive: true, force: true });
   }
 });
+
+// ── S05 tests: full lifecycle end-to-end parity ──────────────────────────────
+
+test("/gsd debug S05: full happy-path lifecycle — start → list → status → continue → resolve → continue-blocked", async () => {
+  const base = makeBase();
+  const saved = process.cwd();
+  process.chdir(base);
+
+  try {
+    const ctx = createMockCtx();
+    const { calls, pi } = createMockPiWithDispatch();
+
+    // 1. Start session
+    await handleGSDCommand("debug Widget fails on mobile", ctx as any, {} as any);
+    const started = lastNotification(ctx);
+    assert.equal(started.level, "info");
+    assert.match(started.message, /Debug session started: widget-fails-on-mobile/);
+    const slug = "widget-fails-on-mobile";
+
+    // 2. List shows the new session
+    await handleGSDCommand("debug list", ctx as any, {} as any);
+    const listed = lastNotification(ctx);
+    assert.equal(listed.level, "info");
+    assert.match(listed.message, /Debug sessions:/);
+    assert.match(listed.message, /widget-fails-on-mobile/);
+    assert.match(listed.message, /mode=debug status=active phase=queued/);
+
+    // 3. Status shows expected fields
+    await handleGSDCommand(`debug status ${slug}`, ctx as any, {} as any);
+    const status = lastNotification(ctx);
+    assert.equal(status.level, "info");
+    assert.match(status.message, new RegExp(`^Debug session status: ${slug}`, "m"));
+    assert.match(status.message, /^mode=debug$/m);
+    assert.match(status.message, /^status=active$/m);
+    assert.match(status.message, /^phase=queued$/m);
+
+    // 4. Continue dispatches find_and_fix goal via debug-diagnose template (no checkpoint/TDD)
+    await handleDebug(`continue ${slug}`, ctx as any, pi as any);
+    const resumed = lastNotification(ctx);
+    assert.equal(resumed.level, "info");
+    assert.match(resumed.message, new RegExp(`Resumed debug session: ${slug}`));
+    assert.match(resumed.message, /dispatchMode=find_and_fix/);
+
+    assert.equal(calls.length, 1, "should dispatch exactly one message on continue");
+    const call = calls[0];
+    assert.equal(call.payload.customType, "gsd-debug-continue");
+    assert.match(call.payload.content, /find_and_fix/);
+    assert.equal(call.options.triggerTurn, true);
+
+    // 5. Mark session resolved; clear calls
+    updateDebugSession(base, slug, { status: "resolved" });
+    calls.length = 0;
+
+    // 6. Continue on resolved session emits warning and does not dispatch
+    await handleDebug(`continue ${slug}`, ctx as any, pi as any);
+    const blockedWarning = lastNotification(ctx);
+    assert.equal(blockedWarning.level, "warning");
+    assert.match(blockedWarning.message, new RegExp(`Session '${slug}' is resolved`));
+    assert.equal(calls.length, 0, "no dispatch for resolved session");
+  } finally {
+    process.chdir(saved);
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("/gsd debug S05: diagnose-only full lifecycle — start → status(mode=diagnose) → continue uses debug-diagnose template", async () => {
+  const base = makeBase();
+  const saved = process.cwd();
+  process.chdir(base);
+
+  try {
+    const ctx = createMockCtx();
+    const { calls, pi } = createMockPiWithDispatch();
+
+    // 1. Start diagnose session via --diagnose <issue>
+    await handleDebug("--diagnose Memory leak in worker pool", ctx as any, pi as any);
+    const started = lastNotification(ctx);
+    assert.equal(started.level, "info");
+    assert.match(started.message, /Diagnose session started:/);
+    assert.match(started.message, /mode=diagnose/);
+    assert.match(started.message, /dispatchMode=find_root_cause_only/);
+
+    assert.equal(calls.length, 1, "should dispatch exactly one message on diagnose-start");
+    const diagnoseCall = calls[0];
+    assert.equal(diagnoseCall.payload.customType, "gsd-debug-diagnose");
+    assert.match(diagnoseCall.payload.content, /find_root_cause_only/);
+    assert.match(diagnoseCall.payload.content, /Memory leak in worker pool/i);
+    assert.equal(diagnoseCall.options.triggerTurn, true);
+
+    const slug = "memory-leak-in-worker-pool";
+
+    // 2. Status shows mode=diagnose
+    await handleGSDCommand(`debug status ${slug}`, ctx as any, {} as any);
+    const status = lastNotification(ctx);
+    assert.equal(status.level, "info");
+    assert.match(status.message, /^mode=diagnose$/m);
+    assert.match(status.message, /^status=active$/m);
+
+    // 3. Continue with no checkpoint/TDD uses debug-diagnose template (no Structured Return Protocol)
+    calls.length = 0;
+    await handleDebug(`continue ${slug}`, ctx as any, pi as any);
+    const resumed = lastNotification(ctx);
+    assert.equal(resumed.level, "info");
+    assert.match(resumed.message, new RegExp(`Resumed debug session: ${slug}`));
+    assert.match(resumed.message, /dispatchMode=find_and_fix/);
+
+    assert.equal(calls.length, 1, "should dispatch exactly one message on continue");
+    const continueCall = calls[0];
+    assert.equal(continueCall.payload.customType, "gsd-debug-continue");
+    // debug-diagnose template: no Structured Return Protocol (that marker is debug-session-manager only)
+    assert.doesNotMatch(continueCall.payload.content, /Structured Return Protocol/);
+    assert.match(continueCall.payload.content, /find_and_fix/);
+    assert.equal(continueCall.options.triggerTurn, true);
+  } finally {
+    process.chdir(saved);
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("/gsd debug S05: TDD full cycle — pending → red → green with disk-reload verification at each phase", async () => {
+  const base = makeBase();
+  const saved = process.cwd();
+  process.chdir(base);
+
+  try {
+    const ctx = createMockCtx();
+    const { calls, pi } = createMockPiWithDispatch();
+
+    // Create session and set tddGate to pending
+    const created = createDebugSession(base, { issue: "Widget state resets on re-render" });
+    const slug = created.session.slug;
+
+    updateDebugSession(base, slug, {
+      tddGate: { enabled: true, phase: "pending" },
+    });
+
+    // Continue with pending: goal = find_root_cause_only, tddGate.phase stays pending
+    await handleDebug(`continue ${slug}`, ctx as any, pi as any);
+    const pendingNotif = lastNotification(ctx);
+    assert.match(pendingNotif.message, /dispatchMode=tddPhase=pending/);
+
+    assert.equal(calls.length, 1);
+    const pendingCall = calls[0];
+    assert.match(pendingCall.payload.content, /## Goal\s+`find_root_cause_only`/);
+    assert.match(pendingCall.payload.content, /phase: pending/);
+    assert.match(pendingCall.payload.content, /Structured Return Protocol/);
+
+    // Disk-reload: tddGate.phase must remain pending (pending does not advance)
+    const afterPending = loadDebugSession(base, slug);
+    assert.ok(afterPending, "session must exist after pending continue");
+    assert.equal(afterPending!.session.tddGate?.phase, "pending", "pending phase must not advance on disk");
+    assert.equal(afterPending!.session.phase, "continued");
+
+    // Advance to red with test metadata
+    updateDebugSession(base, slug, {
+      tddGate: { enabled: true, phase: "red", testFile: "widget.test.ts", testName: "resets on re-render" },
+    });
+    calls.length = 0;
+
+    // Continue with red: goal = find_and_fix, phase advances to green on disk
+    await handleDebug(`continue ${slug}`, ctx as any, pi as any);
+    const redNotif = lastNotification(ctx);
+    assert.match(redNotif.message, /dispatchMode=tddPhase=red/);
+
+    assert.equal(calls.length, 1);
+    const redCall = calls[0];
+    assert.match(redCall.payload.content, /## Goal\s+`find_and_fix`/);
+    assert.match(redCall.payload.content, /phase: red/);
+    assert.match(redCall.payload.content, /testFile: widget\.test\.ts/);
+    assert.match(redCall.payload.content, /testName: resets on re-render/);
+
+    // Disk-reload: tddGate.phase must advance to green
+    const afterRed = loadDebugSession(base, slug);
+    assert.ok(afterRed, "session must exist after red continue");
+    assert.equal(afterRed!.session.tddGate?.phase, "green", "tddGate.phase must advance red→green on disk");
+    assert.equal(afterRed!.session.phase, "continued");
+
+    calls.length = 0;
+
+    // Continue with green: goal = find_and_fix, notification shows tddPhase=green
+    await handleDebug(`continue ${slug}`, ctx as any, pi as any);
+    const greenNotif = lastNotification(ctx);
+    assert.match(greenNotif.message, /dispatchMode=tddPhase=green/);
+
+    assert.equal(calls.length, 1);
+    const greenCall = calls[0];
+    assert.match(greenCall.payload.content, /## Goal\s+`find_and_fix`/);
+    assert.match(greenCall.payload.content, /phase: green/);
+  } finally {
+    process.chdir(saved);
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("/gsd debug S05: dispatch failure resilience — sendMessage throws, session remains resumable and retry succeeds", async () => {
+  const base = makeBase();
+  const saved = process.cwd();
+  process.chdir(base);
+
+  try {
+    const ctx = createMockCtx();
+
+    // Create session with checkpoint to engage debug-session-manager template
+    const created = createDebugSession(base, { issue: "Payment processor timeout on retry" });
+    const slug = created.session.slug;
+
+    updateDebugSession(base, slug, {
+      checkpoint: {
+        type: "human-verify",
+        summary: "Confirm retry logic terminates",
+        awaitingResponse: true,
+      },
+    });
+
+    // Mock pi whose sendMessage always throws
+    const throwingPi = {
+      sendMessage(_payload: any, _options: any) {
+        throw new Error("Network error: sendMessage failed");
+      },
+    };
+
+    await handleDebug(`continue ${slug}`, ctx as any, throwingPi as any);
+
+    // Warning notification about dispatch failure (emitted after the session-update info notification)
+    const failNotif = lastNotification(ctx);
+    assert.equal(failNotif.level, "warning");
+    assert.match(failNotif.message, /Continue dispatch failed/);
+    assert.match(failNotif.message, new RegExp(slug));
+
+    // Session must be persisted with phase=continued (state is updated before dispatch attempt)
+    const reloaded = loadDebugSession(base, slug);
+    assert.ok(reloaded, "session must still exist on disk after dispatch failure");
+    assert.equal(reloaded!.session.phase, "continued", "phase must be continued despite failed dispatch");
+    assert.equal(reloaded!.session.status, "active");
+
+    // Retry with a working mock pi succeeds
+    const { calls: retryCalls, pi: workingPi } = createMockPiWithDispatch();
+    await handleDebug(`continue ${slug}`, ctx as any, workingPi as any);
+
+    const retryNotif = lastNotification(ctx);
+    assert.equal(retryNotif.level, "info");
+    assert.match(retryNotif.message, new RegExp(`Resumed debug session: ${slug}`));
+
+    assert.equal(retryCalls.length, 1, "retry should dispatch exactly one message");
+    const retryCall = retryCalls[0];
+    assert.equal(retryCall.payload.customType, "gsd-debug-continue");
+    assert.equal(retryCall.options.triggerTurn, true);
+  } finally {
+    process.chdir(saved);
+    rmSync(base, { recursive: true, force: true });
+  }
+});
