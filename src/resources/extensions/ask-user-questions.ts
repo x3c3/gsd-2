@@ -37,7 +37,7 @@ interface RemoteResultDetails {
 	threadUrl?: string;
 	status?: string;
 	questions?: Question[];
-	response?: import("./remote-questions/types.js").RemoteAnswer;
+	response?: RoundResult;
 	error?: boolean;
 }
 
@@ -435,10 +435,13 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 							lines.push(`${theme.fg("accent", q.header)}: ${theme.fg("dim", "(no answer)")}`);
 							continue;
 						}
-						const answerText = answer.answers.length > 0 ? answer.answers.join(", ") : "(custom)";
+						const selected = answer.selected;
+						const answerText = Array.isArray(selected)
+							? (selected.length > 0 ? selected.join(", ") : "(custom)")
+							: (selected || "(custom)");
 						let line = `${theme.fg("success", "✓ ")}${theme.fg("accent", q.header)}: ${answerText}`;
-						if (answer.user_note) {
-							line += ` ${theme.fg("muted", `[note: ${answer.user_note}]`)}`;
+						if (answer.notes) {
+							line += ` ${theme.fg("muted", `[note: ${answer.notes}]`)}`;
 						}
 						lines.push(line);
 					}

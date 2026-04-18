@@ -4,6 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ChannelAdapter, RemotePrompt, RemoteQuestion, RemoteAnswer } from "./types.js";
+import type { RoundResult } from "../shared/interview-ui.js";
 import { resolveRemoteConfig, type ResolvedConfig } from "./config.js";
 import { DiscordAdapter } from "./discord-adapter.js";
 import { SlackAdapter } from "./slack-adapter.js";
@@ -135,10 +136,21 @@ export async function tryRemoteQuestions(
       promptId: prompt.id,
       threadUrl: dispatch.ref.threadUrl ?? null,
       questions,
-      response: answer,
+      response: toRoundResultResponse(answer),
       status: "answered",
     },
   };
+}
+
+/** Normalize a RemoteAnswer to the RoundResult shape consumed by the gsd write-gate hook. */
+export function toRoundResultResponse(answer: RemoteAnswer): RoundResult {
+  const normalized: RoundResult["answers"] = {};
+  for (const [id, data] of Object.entries(answer.answers)) {
+    const list = data.answers ?? [];
+    const selected: string | string[] = list.length <= 1 ? (list[0] ?? "") : list;
+    normalized[id] = { selected, notes: data.user_note ?? "" };
+  }
+  return { endInterview: false, answers: normalized };
 }
 
 function createPrompt(questions: QuestionInput[], config: ResolvedConfig): RemotePrompt {
