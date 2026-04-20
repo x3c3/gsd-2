@@ -45,6 +45,13 @@ test("classifyError treats usage-limit phrasing as transient rate-limit (#4373)"
   assert.equal(result.kind, "rate-limit");
 });
 
+test("classifyError treats extra-usage phrasing as transient rate-limit (#4397)", () => {
+  const result = classifyError("You are out of extra usage. Please wait before retrying.");
+  assert.ok(isTransient(result));
+  assert.equal(result.kind, "rate-limit");
+  assert.ok("retryAfterMs" in result && result.retryAfterMs === 60_000);
+});
+
 test("classifyError treats OpenRouter affordability errors as transient rate-limit class", () => {
   const result = classifyError(
     "402 This request requires more credits, or fewer max_tokens. You requested up to 32000 tokens, but can only afford 329.",
