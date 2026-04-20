@@ -73,8 +73,8 @@ function safeReadMeta(path: string): ExecHistoryEntry | null {
       stderr_bytes: typeof parsed.stderr_bytes === "number" ? parsed.stderr_bytes : 0,
       stdout_truncated: parsed.stdout_truncated === true,
       stderr_truncated: parsed.stderr_truncated === true,
-      stdout_path: typeof parsed.stdout_path === "string" ? parsed.stdout_path : "",
-      stderr_path: typeof parsed.stderr_path === "string" ? parsed.stderr_path : "",
+      stdout_path: path.replace(/\.meta\.json$/, ".stdout"),
+      stderr_path: path.replace(/\.meta\.json$/, ".stderr"),
       meta_path: path,
     };
   } catch {

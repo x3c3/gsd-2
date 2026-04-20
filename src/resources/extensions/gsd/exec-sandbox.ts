@@ -271,8 +271,14 @@ export function runExecSandbox(
 
     child.on("error", (err) => {
       const message = err instanceof Error ? err.message : String(err);
-      stderrChunks.push(Buffer.from(`child error: ${message}\n`, "utf-8"));
-      stderrBytes += Buffer.byteLength(`child error: ${message}\n`);
+      const line = `child error: ${message}\n`;
+      const remaining = opts.stderr_cap_bytes - stderrBytes;
+      if (remaining > 0) {
+        const chunk = Buffer.from(line, "utf-8").subarray(0, remaining);
+        stderrChunks.push(chunk);
+        stderrBytes += chunk.length;
+        if (chunk.length < Buffer.byteLength(line, "utf-8")) stderrTruncated = true;
+      }
     });
     child.on("close", (code, signal) => finalize(code, signal));
   });

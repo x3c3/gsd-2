@@ -114,7 +114,7 @@ export async function executeGsdExec(
   if (script.trim().length === 0) {
     return paramError("script is required and must be a non-empty string");
   }
-  if (script.length > 200_000) {
+  if (Buffer.byteLength(script, "utf8") > 200_000) {
     return paramError("script exceeds the 200 KB length limit");
   }
 
@@ -171,7 +171,7 @@ function formatResult(result: ExecSandboxResult): ToolExecutionResult {
       stderr_path: result.stderr_path,
       meta_path: result.meta_path,
     },
-    isError: result.timed_out || (result.exit_code !== 0 && result.exit_code !== null),
+    isError: result.timed_out || result.signal !== null || (result.exit_code !== 0 && result.exit_code !== null),
   };
 }
 

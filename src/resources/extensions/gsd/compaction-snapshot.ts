@@ -128,10 +128,11 @@ export function writeCompactionSnapshot(
   const gsdDir = resolve(baseDir, ".gsd");
   if (!existsSync(gsdDir)) mkdirSync(gsdDir, { recursive: true });
   const path = resolve(gsdDir, SNAPSHOT_FILENAME);
-  writeFileSync(path, `${content}\n`, "utf-8");
+  const finalContent = `${content}\n`;
+  writeFileSync(path, finalContent, "utf-8");
   return {
     path,
-    bytes: Buffer.byteLength(content, "utf-8"),
+    bytes: Buffer.byteLength(finalContent, "utf-8"),
     memories: memories.length,
     execRuns: execHistory.length,
   };
