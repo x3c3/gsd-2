@@ -296,14 +296,26 @@ export async function buildSliceSummaryExcerpt(
       lines.push(`**Key files:** ${files.join(", ")}${more}`);
     }
 
+    // Cap section bodies (coderabbit review on #4908): if any of these
+    // narrative sections balloon, excerpt mode still inflates and
+    // undermines the token-reduction goal. 800 chars (~200 tokens) is
+    // enough to carry intent; the closer agent Reads the full file when
+    // it needs richer context for LEARNINGS synthesis.
+    const SECTION_CAP_CHARS = 800;
+    const capSection = (body: string): string => {
+      const trimmed = body.trim();
+      if (trimmed.length <= SECTION_CAP_CHARS) return trimmed;
+      return `${trimmed.slice(0, SECTION_CAP_CHARS)}\n… (truncated — see full \`${relPath}\`)`;
+    };
+
     if (s.deviations && s.deviations.trim()) {
-      lines.push("", "#### Deviations", s.deviations.trim());
+      lines.push("", "#### Deviations", capSection(s.deviations));
     }
     if (s.knownLimitations && s.knownLimitations.trim()) {
-      lines.push("", "#### Known limitations", s.knownLimitations.trim());
+      lines.push("", "#### Known limitations", capSection(s.knownLimitations));
     }
     if (s.followUps && s.followUps.trim()) {
-      lines.push("", "#### Follow-ups", s.followUps.trim());
+      lines.push("", "#### Follow-ups", capSection(s.followUps));
     }
 
     lines.push(

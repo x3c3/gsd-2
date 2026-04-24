@@ -189,6 +189,38 @@ test("#4780 excerpt: missing file reports not-found fallback", async (t) => {
   assert.match(out, /not found — file does not exist yet/);
 });
 
+test("#4780 excerpt: section bodies are capped (coderabbit review)", async (t) => {
+  const base = createBase();
+  t.after(() => cleanup(base));
+  invalidateAllCaches();
+
+  // Long Follow-ups section (~4.8KB) would balloon the excerpt without
+  // the cap — regression coverage for the coderabbit finding on #4908.
+  const longFollowUps = "A verbose follow-up bullet that keeps restating the same point. ".repeat(60);
+  const content = [
+    "---",
+    "id: S01",
+    "parent: M001",
+    "milestone: M001",
+    "---",
+    "# S01: Test",
+    "**One-liner**",
+    "",
+    "## Follow-ups",
+    longFollowUps,
+  ].join("\n");
+  const absPath = join(base, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
+  writeSummary(base, "S01", content);
+
+  const out = await buildSliceSummaryExcerpt(absPath, "rel/path.md", "S01");
+
+  assert.match(out, /\(truncated — see full `rel\/path\.md`\)/);
+  assert.ok(
+    out.length < 2000,
+    `excerpt length ${out.length} should be well under 2KB when one section hits the cap`,
+  );
+});
+
 // ─── buildCompleteMilestonePrompt integration test ─────────────────────────
 
 test("#4780 closer prompt: uses excerpts + lists on-demand slice SUMMARY paths", async (t) => {
