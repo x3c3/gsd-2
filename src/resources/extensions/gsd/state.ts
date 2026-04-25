@@ -347,6 +347,7 @@ function diskMilestoneInsert(basePath: string, mid: string): {
   const roadmapContent = loadSync(resolveMilestoneFile(basePath, mid, "ROADMAP"));
   const summaryContent = loadSync(resolveMilestoneFile(basePath, mid, "SUMMARY"));
   const roadmap = roadmapContent ? parseRoadmap(roadmapContent) : null;
+  const summary = summaryContent ? parseSummary(summaryContent) : null;
   const summaryTerminal = summaryContent != null && isTerminalMilestoneSummaryContent(summaryContent);
   const parked = resolveMilestoneFile(basePath, mid, "PARKED") !== null;
 
@@ -354,7 +355,9 @@ function diskMilestoneInsert(basePath: string, mid: string): {
     id: mid,
     title: roadmap
       ? stripMilestonePrefix(roadmap.title)
-      : extractContextTitle(contextContent || draftContent, mid),
+      : (contextContent || draftContent)
+        ? extractContextTitle(contextContent || draftContent, mid)
+        : (summary?.title || mid),
     status: parked ? "parked" : summaryTerminal ? "complete" : "active",
     depends_on: parseContextDependsOn(contextContent ?? draftContent),
   };
