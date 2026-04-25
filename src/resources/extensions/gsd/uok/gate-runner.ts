@@ -128,7 +128,7 @@ export class UokGateRunner {
         rationale: result.rationale,
         findings: result.findings,
         attempt,
-        maxAttempts: Math.max(1, retryBudget),
+        maxAttempts: retryBudget + 1,
         retryable,
         evaluatedAt: now,
       };
