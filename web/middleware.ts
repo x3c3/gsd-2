@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { isShutdownPending } from "./lib/shutdown-gate"
 
 /**
  * Next.js middleware — validates bearer token and origin on all API routes.
@@ -17,20 +16,6 @@ export function middleware(request: NextRequest): NextResponse | undefined {
 
   // Only gate API routes
   if (!pathname.startsWith("/api/")) return NextResponse.next()
-
-  // Block new work while a shutdown is pending. The boot and shutdown routes
-  // are allowed through: boot so it can cancel the shutdown, shutdown so a
-  // repeated pagehide beacon doesn't get a surprising 503.
-  if (
-    isShutdownPending() &&
-    pathname !== "/api/boot" &&
-    pathname !== "/api/shutdown"
-  ) {
-    return NextResponse.json(
-      { error: "Server is shutting down" },
-      { status: 503 },
-    )
-  }
 
   const expectedToken = process.env.GSD_WEB_AUTH_TOKEN
   if (!expectedToken) {
