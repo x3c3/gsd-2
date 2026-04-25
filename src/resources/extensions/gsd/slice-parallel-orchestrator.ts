@@ -20,6 +20,8 @@ import {
   writeFileSync,
   readFileSync,
   mkdirSync,
+  renameSync,
+  unlinkSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,13 +71,184 @@ export interface StartSliceParallelOpts {
 
 let sliceState: SliceOrchestratorState | null = null;
 
+// ─── Persisted State (crash recovery) ──────────────────────────────────────
+//
+// Mirrors parallel-orchestrator.ts. Without persistence, a coordinator crash
+// leaves orphaned worktrees on disk with no way to detect or clean them up
+// on next session start. (Issue #4980 HIGH-8)
+
+const SLICE_ORCHESTRATOR_STATE_FILE = "slice-orchestrator.json";
+const TMP_SUFFIX = ".tmp";
+
+interface PersistedSliceWorker {
+  milestoneId: string;
+  sliceId: string;
+  pid: number;
+  worktreePath: string;
+  startedAt: number;
+  state: "running" | "stopped" | "error";
+  completedUnits: number;
+  cost: number;
+}
+
+interface PersistedSliceState {
+  active: boolean;
+  workers: PersistedSliceWorker[];
+  totalCost: number;
+  budgetCeiling?: number;
+  maxWorkers: number;
+  startedAt: number;
+  basePath: string;
+}
+
+function sliceStateFilePath(basePath: string): string {
+  return join(gsdRoot(basePath), SLICE_ORCHESTRATOR_STATE_FILE);
+}
+
+function isSlicePidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Persist current slice orchestrator state. Atomic write (tmp + rename) to
+ * prevent partial reads if the coordinator dies mid-write.
+ */
+function persistSliceState(): void {
+  if (!sliceState) return;
+  try {
+    const dir = gsdRoot(sliceState.basePath);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+    const persisted: PersistedSliceState = {
+      active: sliceState.active,
+      workers: [...sliceState.workers.values()].map((w) => ({
+        milestoneId: w.milestoneId,
+        sliceId: w.sliceId,
+        pid: w.pid,
+        worktreePath: w.worktreePath,
+        startedAt: w.startedAt,
+        state: w.state,
+        completedUnits: w.completedUnits,
+        cost: w.cost,
+      })),
+      totalCost: sliceState.totalCost,
+      budgetCeiling: sliceState.budgetCeiling,
+      maxWorkers: sliceState.maxWorkers,
+      startedAt: sliceState.startedAt,
+      basePath: sliceState.basePath,
+    };
+
+    const dest = sliceStateFilePath(sliceState.basePath);
+    const tmp = dest + TMP_SUFFIX;
+    writeFileSync(tmp, JSON.stringify(persisted, null, 2), "utf-8");
+    renameSync(tmp, dest);
+  } catch {
+    /* non-fatal: persistence is best-effort */
+  }
+}
+
+function removeSliceStateFile(basePath: string): void {
+  try {
+    const p = sliceStateFilePath(basePath);
+    if (existsSync(p)) unlinkSync(p);
+  } catch {
+    /* non-fatal */
+  }
+}
+
+/**
+ * Restore slice orchestrator state from disk. Filters dead-PID workers and
+ * removes their orphaned worktrees so a clean restart is possible.
+ *
+ * Returns null if no state file exists or no workers survive.
+ */
+export function restoreSliceState(basePath: string): PersistedSliceState | null {
+  try {
+    const p = sliceStateFilePath(basePath);
+    if (!existsSync(p)) return null;
+    const persisted = JSON.parse(readFileSync(p, "utf-8")) as PersistedSliceState;
+
+    const survivors: PersistedSliceWorker[] = [];
+    const dead: PersistedSliceWorker[] = [];
+    for (const w of persisted.workers) {
+      if (w.state === "stopped" || w.state === "error") {
+        dead.push(w);
+      } else if (isSlicePidAlive(w.pid)) {
+        survivors.push(w);
+      } else {
+        dead.push(w);
+      }
+    }
+
+    // Best-effort cleanup of orphaned worktrees from dead workers.
+    for (const w of dead) {
+      const wtName = `${w.milestoneId}-${w.sliceId}`;
+      try {
+        removeWorktree(persisted.basePath, wtName, { deleteBranch: true, force: true });
+      } catch {
+        /* worktree may already be gone */
+      }
+    }
+
+    persisted.workers = survivors;
+
+    if (survivors.length === 0) {
+      removeSliceStateFile(basePath);
+      return null;
+    }
+
+    return persisted;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /**
  * Check whether slice-level parallel is currently active.
+ *
+ * If in-memory state is unset but a persisted state file exists with at
+ * least one live-PID worker, treat as active and rehydrate so a coordinator
+ * crash followed by a fresh process is detectable. (Issue #4980 HIGH-8)
  */
-export function isSliceParallelActive(): boolean {
-  return sliceState?.active === true;
+export function isSliceParallelActive(basePath?: string): boolean {
+  if (sliceState?.active === true) return true;
+  if (!basePath) return false;
+  const restored = restoreSliceState(basePath);
+  if (!restored || restored.workers.length === 0) return false;
+
+  // Rehydrate in-memory state from disk; processes are detached so we have
+  // no ChildProcess handles, only PIDs.
+  sliceState = {
+    active: restored.active,
+    workers: new Map(),
+    totalCost: restored.totalCost,
+    budgetCeiling: restored.budgetCeiling,
+    maxWorkers: restored.maxWorkers,
+    startedAt: restored.startedAt,
+    basePath: restored.basePath,
+  };
+  for (const w of restored.workers) {
+    sliceState.workers.set(w.sliceId, {
+      milestoneId: w.milestoneId,
+      sliceId: w.sliceId,
+      pid: w.pid,
+      process: null,
+      worktreePath: w.worktreePath,
+      startedAt: w.startedAt,
+      state: w.state,
+      completedUnits: w.completedUnits,
+      cost: w.cost,
+    });
+  }
+  return true;
 }
 
 /**
@@ -177,6 +350,10 @@ export async function startSliceParallel(
   // If nothing started, deactivate
   if (started.length === 0) {
     sliceState.active = false;
+    removeSliceStateFile(basePath);
+  } else {
+    // Persist state for crash recovery (Issue #4980 HIGH-8).
+    persistSliceState();
   }
 
   return { started, errors };
@@ -187,6 +364,7 @@ export async function startSliceParallel(
  */
 export function stopSliceParallel(): void {
   if (!sliceState) return;
+  const basePath = sliceState.basePath;
 
   for (const worker of sliceState.workers.values()) {
     if (worker.process) {
@@ -207,6 +385,9 @@ export function stopSliceParallel(): void {
   }
 
   sliceState.active = false;
+  // Clear persisted state — clean shutdown means no recovery on next start.
+  // (Issue #4980 HIGH-8)
+  removeSliceStateFile(basePath);
 }
 
 /**
@@ -438,6 +619,10 @@ function spawnSliceWorker(
       startedAt: w.startedAt,
       worktreePath: w.worktreePath,
     });
+
+    // Persist worker terminal state for crash recovery.
+    // (Issue #4980 HIGH-8)
+    persistSliceState();
   });
 
   return true;
@@ -474,6 +659,9 @@ function processSliceWorkerLine(
         sliceState.totalCost += usage.cost;
       }
       worker.completedUnits++;
+      // Persist cost / progress updates so a crash mid-run preserves them.
+      // (Issue #4980 HIGH-8)
+      persistSliceState();
     }
   }
 }
