@@ -57,6 +57,16 @@ function extractFunctionBody(source: string, functionName: string): string {
   return source.slice(body.getStart(sourceFile) + 1, body.end - 1);
 }
 
+function extractStuckDetectionSection(source: string): string {
+  const stuckSectionIdx = source.indexOf("Sliding-window stuck detection");
+  assert.ok(stuckSectionIdx !== -1, "stuck-detection section must exist");
+
+  const preDispatchIdx = source.indexOf("// Pre-dispatch hooks", stuckSectionIdx);
+  assert.ok(preDispatchIdx !== -1, "pre-dispatch hooks section must follow stuck detection");
+
+  return source.slice(stuckSectionIdx, preDispatchIdx);
+}
+
 const postUnitPreVerificationBody = extractFunctionBody(
   postUnitSrc,
   "postUnitPreVerification",
@@ -103,22 +113,25 @@ test("#2007 bug 1: exhaustion path pauses auto-mode instead of silently continui
 });
 
 test("#2007 bug 1: failure context message includes attempt count and max", () => {
-  // The user-facing message should show progress, e.g. "(attempt 1/3)"
+  const failureContextIdx = postUnitPreVerificationBody.indexOf("failureContext:");
+  assert.ok(failureContextIdx !== -1, "failureContext assignment must exist");
   assert.ok(
-    postUnitPreVerificationBody.includes("MAX_ARTIFACT_VERIFICATION_RETRIES}"),
-    "retry notification message should include the max retry count",
+    postUnitPreVerificationBody.includes(
+      "attempt ${attempt}/${MAX_ARTIFACT_VERIFICATION_RETRIES}",
+      failureContextIdx,
+    ),
+    "failure context should include attempt progress (attempt/current-max)",
   );
 });
 
 // ─── Bug 2: stuck detection must see all dispatches ──────────────────────────
 
 test("#2007 bug 2: recentUnits.push is unconditional — not gated on pendingVerificationRetry", () => {
-  // Find the push call
-  const pushIdx = phasesSrc.indexOf("recentUnits.push");
+  const stuckSection = extractStuckDetectionSection(phasesSrc);
+  const pushIdx = stuckSection.indexOf("recentUnits.push");
   assert.ok(pushIdx !== -1, "recentUnits.push must exist in phases.ts");
 
-  // Find the pendingVerificationRetry check
-  const pendingCheckIdx = phasesSrc.indexOf("!s.pendingVerificationRetry");
+  const pendingCheckIdx = stuckSection.indexOf("!s.pendingVerificationRetry");
   assert.ok(pendingCheckIdx !== -1, "pendingVerificationRetry guard must exist");
 
   // The push must come BEFORE the pendingVerificationRetry guard
@@ -131,8 +144,9 @@ test("#2007 bug 2: recentUnits.push is unconditional — not gated on pendingVer
 test("#2007 bug 2: detectStuck is still inside the pendingVerificationRetry guard", () => {
   // detectStuck should only run when NOT in a retry — to avoid false positives
   // during legitimate retries, but now the window is always populated.
-  const pendingCheckIdx = phasesSrc.indexOf("!s.pendingVerificationRetry");
-  const detectStuckIdx = phasesSrc.indexOf("detectStuck(", pendingCheckIdx);
+  const stuckSection = extractStuckDetectionSection(phasesSrc);
+  const pendingCheckIdx = stuckSection.indexOf("!s.pendingVerificationRetry");
+  const detectStuckIdx = stuckSection.indexOf("detectStuck(", pendingCheckIdx);
 
   assert.ok(
     detectStuckIdx !== -1 && detectStuckIdx > pendingCheckIdx,
