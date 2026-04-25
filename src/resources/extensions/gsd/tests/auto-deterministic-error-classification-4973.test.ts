@@ -193,6 +193,7 @@ describe("Test 5 — postUnitPreVerification short-circuits on deterministic err
     s.currentUnit = { type: "discuss-milestone", id: "M001", startedAt: Date.now() };
     // Set the deterministic error that would be recorded by recordToolInvocationError
     s.lastToolInvocationError = "gsd_summary_save: Error saving artifact: context write blocked";
+    s.verificationRetryCount.set("discuss-milestone:M001", 2);
 
     let pauseCalled = false;
     const ctx = {
@@ -217,6 +218,7 @@ describe("Test 5 — postUnitPreVerification short-circuits on deterministic err
     // no retry, and the placeholder is written so the pipeline can advance.
     assert.strictEqual(result, "continue", "must return 'continue', not 'retry' or 'dispatched'");
     assert.strictEqual(s.pendingVerificationRetry, null, "pendingVerificationRetry must NOT be set");
+    assert.strictEqual(s.verificationRetryCount.has("discuss-milestone:M001"), false, "deterministic short-circuit clears stale retry count");
     assert.strictEqual(s.lastToolInvocationError, null, "lastToolInvocationError cleared after handling");
     assert.strictEqual(pauseCalled, false, "pauseAuto must NOT be called for deterministic errors");
 

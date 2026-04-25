@@ -18,7 +18,6 @@ import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
 import { deriveState } from "../state.js";
 import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart, recordToolInvocationError } from "../auto.js";
-import { isDeterministicPolicyError } from "../auto-tool-tracking.js";
 
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
@@ -403,12 +402,9 @@ export function registerHooks(
             : (typeof (event as any).content === "string"
                 ? (event as any).content
                 : String(resultPayload ?? "")));
-      // #4973: Capture deterministic policy errors regardless of tool prefix —
-      // the raw `write` tool can hit shouldBlockContextWrite and would otherwise
-      // be missed by the gsd_-only filter.
-      if (event.toolName.startsWith("gsd_") || isDeterministicPolicyError(errorText)) {
-        recordToolInvocationError(event.toolName, errorText);
-      }
+      // Let recordToolInvocationError classify the failure so non-gsd_ harness
+      // errors and deterministic policy rejections are handled consistently.
+      recordToolInvocationError(event.toolName, errorText);
     }
     if (event.toolName !== "ask_user_questions") return;
     const milestoneId = getDiscussionMilestoneId(process.cwd());
@@ -501,11 +497,9 @@ export function registerHooks(
       const errorText = typeof event.result === "string"
         ? event.result
         : (typeof event.result?.content?.[0]?.text === "string" ? event.result.content[0].text : String(event.result));
-      // #4973: Capture deterministic policy errors regardless of tool prefix —
-      // matches the same gate used by tool_result above for the raw `write` path.
-      if (event.toolName.startsWith("gsd_") || isDeterministicPolicyError(errorText)) {
-        recordToolInvocationError(event.toolName, errorText);
-      }
+      // Let recordToolInvocationError classify the failure so non-gsd_ harness
+      // errors and deterministic policy rejections are handled consistently.
+      recordToolInvocationError(event.toolName, errorText);
     }
     // Safety harness: record tool execution results for evidence cross-referencing
     if (isAutoActive()) {

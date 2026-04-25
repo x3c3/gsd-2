@@ -914,10 +914,12 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       // they are structural gates that will fire on every retry regardless of DB or
       // model tier. Short-circuit immediately by writing a blocker placeholder.
       if (!triggerArtifactVerified && s.lastToolInvocationError && isDeterministicPolicyError(s.lastToolInvocationError)) {
+        const retryKey = `${s.currentUnit.type}:${s.currentUnit.id}`;
         debugLog("postUnit", { phase: "deterministic-policy-error-placeholder", unitType: s.currentUnit.type, unitId: s.currentUnit.id, error: s.lastToolInvocationError });
         const reason = `Deterministic policy rejection for ${s.currentUnit.type} "${s.currentUnit.id}": ${s.lastToolInvocationError}. Retrying cannot resolve this gate — writing blocker placeholder to advance pipeline.`;
         s.lastToolInvocationError = null;
         s.pendingVerificationRetry = null;
+        s.verificationRetryCount.delete(retryKey);
         writeBlockerPlaceholder(s.currentUnit.type, s.currentUnit.id, s.basePath, reason);
         ctx.ui.notify(
           `${s.currentUnit.type} ${s.currentUnit.id} — deterministic policy rejection, wrote blocker placeholder (no retries) (#4973)`,

@@ -286,7 +286,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // reaches this match fn — so this call always happens after any session-switch reset.
       // Interactive sessions (isAutoActive()===false) are unaffected.
       if (isAutoActive()) {
-        markDepthVerified(mid);
+        markDepthVerified(mid, basePath);
       }
       return {
         action: "dispatch",
@@ -427,7 +427,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // deadlock in non-interactive (auto-mode) runs. See ordering note at
       // "execution-entry phase (no context) → discuss-milestone" above.
       if (isAutoActive()) {
-        markDepthVerified(mid);
+        markDepthVerified(mid, basePath);
       }
       return {
         action: "dispatch",
@@ -453,7 +453,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // deadlock in non-interactive (auto-mode) runs. See ordering note at
       // "execution-entry phase (no context) → discuss-milestone" above.
       if (isAutoActive()) {
-        markDepthVerified(mid);
+        markDepthVerified(mid, basePath);
       }
       return {
         action: "dispatch",
