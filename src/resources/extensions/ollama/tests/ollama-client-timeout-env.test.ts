@@ -78,8 +78,14 @@ describe("envPositiveInt — defensive fallback", () => {
 		});
 	});
 
-	it("caps values above Node's maximum timer delay", () => {
-		withEnv("__GSD_TEST_INT__", "9999999999999", () => {
+	it("clamps values above MAX_TIMER_DELAY_MS to prevent setTimeout overflow", () => {
+		withEnv("__GSD_TEST_INT__", String(MAX_TIMER_DELAY_MS + 1), () => {
+			assert.equal(envPositiveInt("__GSD_TEST_INT__", 42), MAX_TIMER_DELAY_MS);
+		});
+	});
+
+	it("accepts MAX_TIMER_DELAY_MS exactly", () => {
+		withEnv("__GSD_TEST_INT__", String(MAX_TIMER_DELAY_MS), () => {
 			assert.equal(envPositiveInt("__GSD_TEST_INT__", 42), MAX_TIMER_DELAY_MS);
 		});
 	});
