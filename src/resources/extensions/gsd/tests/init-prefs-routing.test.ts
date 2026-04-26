@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { mapInitPrefsToWizardShape } from "../init-wizard.ts";
-import { writePreferencesFile } from "../commands-prefs-wizard.ts";
+import { handlePrefsWizard, writePreferencesFile } from "../commands-prefs-wizard.ts";
 
 test("mapInitPrefsToWizardShape — full roundtrip with all fields", () => {
   const out = mapInitPrefsToWizardShape({
@@ -118,6 +118,46 @@ test("writePreferencesFile — falls back to default body for new files", async 
     await writePreferencesFile(path, { mode: "solo" }, null, { defaultBody: initBody });
     const content = readFileSync(path, "utf-8");
     assert.match(content, /Init body marker/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("handlePrefsWizard — Advanced config writes min_request_interval_ms", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-init-prefs-routing-"));
+  const path = join(tmp, "PREFERENCES.md");
+
+  try {
+    const selectResponses = [
+      "Advanced",
+      "(keep current)",
+      "(keep current)",
+      "(keep current)",
+      "(keep current)",
+      "(keep current)",
+      "(keep current)",
+      "(keep current)",
+      "── Save & Exit ──",
+    ];
+    const inputResponses = ["250"];
+    const ctx = {
+      ui: {
+        notify: () => {},
+        select: async (_label: string, options: string[]) => {
+          const response = selectResponses.shift();
+          if (response === "Advanced") return options.find((option) => option.startsWith("Advanced"));
+          return response;
+        },
+        input: async () => inputResponses.shift() ?? "",
+      },
+      waitForIdle: async () => {},
+      reload: async () => {},
+    };
+
+    await handlePrefsWizard(ctx as any, "project", {}, { pathOverride: path });
+
+    const content = readFileSync(path, "utf-8");
+    assert.match(content, /min_request_interval_ms: 250/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
