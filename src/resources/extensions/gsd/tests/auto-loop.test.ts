@@ -736,6 +736,7 @@ function makeLoopSession(overrides?: Partial<Record<string, unknown>>) {
     unitRecoveryCount: new Map<string, number>(),
     verificationRetryCount: new Map<string, number>(),
     gitService: null,
+    lastRequestTimestamp: 0,
     autoStartTime: Date.now(),
     cmdCtx: {
       newSession: () => Promise.resolve({ cancelled: false }),
@@ -2358,6 +2359,137 @@ test("autoLoop warns but proceeds for greenfield project (no project files) (#18
   assert.ok(
     greenfieldWarning,
     "should warn about greenfield project (no project files)",
+  );
+});
+
+// ── Proactive rate limiting (#2996) ──────────────────────────────────────────
+
+test("autoLoop enforces min_request_interval_ms delay between LLM dispatches (#2996)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  ctx.sessionManager = { getSessionFile: () => "/tmp/session.json" };
+  const pi = makeMockPi();
+  const originalSendMessage = pi.sendMessage;
+  const dispatchTimestamps: number[] = [];
+  pi.sendMessage = (...args: unknown[]) => {
+    dispatchTimestamps.push(Date.now());
+    return originalSendMessage(...args);
+  };
+
+  let iterCount = 0;
+
+  const s = makeLoopSession();
+
+  const deps = makeMockDeps({
+    loadEffectiveGSDPreferences: () => ({
+      preferences: { min_request_interval_ms: 300 },
+    }),
+    deriveState: async () => {
+      iterCount++;
+      deps.callLog.push("deriveState");
+      return {
+        phase: "executing",
+        activeMilestone: { id: "M001", title: "Test", status: "active" },
+        activeSlice: { id: "S01", title: "Slice" },
+        activeTask: { id: "T01" },
+        registry: [{ id: "M001", status: "active" }],
+        blockers: [],
+      } as any;
+    },
+    postUnitPostVerification: async () => {
+      deps.callLog.push("postUnitPostVerification");
+      if (iterCount >= 2) {
+        s.active = false;
+      }
+      return "continue" as const;
+    },
+  });
+
+  const loopPromise = autoLoop(ctx, pi, s, deps);
+
+  await new Promise((r) => setTimeout(r, 100));
+  resolveAgentEnd(makeEvent());
+  await new Promise((r) => setTimeout(r, 500));
+  resolveAgentEnd(makeEvent());
+
+  await loopPromise;
+
+  assert.ok(iterCount >= 2, `expected at least 2 iterations, got ${iterCount}`);
+  assert.ok(dispatchTimestamps.length >= 2, `expected at least 2 dispatches, got ${dispatchTimestamps.length}`);
+
+  assert.ok(
+    (s as any).lastRequestTimestamp > 0,
+    "lastRequestTimestamp should be set after iterations",
+  );
+
+  const gap = dispatchTimestamps[1]! - dispatchTimestamps[0]!;
+  assert.ok(
+    gap >= 250,
+    `gap between dispatches should be >= 250ms (got ${gap}ms) due to min_request_interval_ms=300`,
+  );
+});
+
+test("autoLoop skips rate-limit delay when min_request_interval_ms is 0 (default)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  ctx.sessionManager = { getSessionFile: () => "/tmp/session.json" };
+  const pi = makeMockPi();
+  const originalSendMessage = pi.sendMessage;
+  const dispatchTimestamps: number[] = [];
+  pi.sendMessage = (...args: unknown[]) => {
+    dispatchTimestamps.push(Date.now());
+    return originalSendMessage(...args);
+  };
+
+  let iterCount = 0;
+
+  const s = makeLoopSession();
+
+  const deps = makeMockDeps({
+    loadEffectiveGSDPreferences: () => ({
+      preferences: {},
+    }),
+    deriveState: async () => {
+      iterCount++;
+      deps.callLog.push("deriveState");
+      return {
+        phase: "executing",
+        activeMilestone: { id: "M001", title: "Test", status: "active" },
+        activeSlice: { id: "S01", title: "Slice" },
+        activeTask: { id: "T01" },
+        registry: [{ id: "M001", status: "active" }],
+        blockers: [],
+      } as any;
+    },
+    postUnitPostVerification: async () => {
+      deps.callLog.push("postUnitPostVerification");
+      if (iterCount >= 3) {
+        s.active = false;
+      }
+      return "continue" as const;
+    },
+  });
+
+  const loopPromise = autoLoop(ctx, pi, s, deps);
+
+  for (let i = 0; i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    resolveAgentEnd(makeEvent());
+  }
+
+  await loopPromise;
+
+  assert.ok(iterCount >= 3, `expected at least 3 iterations, got ${iterCount}`);
+  assert.ok(dispatchTimestamps.length >= 3, `expected at least 3 dispatches, got ${dispatchTimestamps.length}`);
+
+  const gap = dispatchTimestamps[2]! - dispatchTimestamps[1]!;
+  assert.ok(
+    gap < 150,
+    `gap should be < 150ms without rate limiting (got ${gap}ms)`,
   );
 });
 
