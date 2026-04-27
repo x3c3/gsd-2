@@ -2380,9 +2380,9 @@ export function mergeMilestoneToMain(
   // future maintainers safe against intervening chdir's between step 3 and
   // here.
   try {
-    if (process.cwd() !== originalBasePath_) {
-      process.chdir(originalBasePath_);
-    }
+    // process.cwd() can throw ENOENT when cwd was removed, so attempt
+    // recovery directly.
+    process.chdir(originalBasePath_);
   } catch (err) {
     logWarning("worktree", `chdir to project root after merge failed: ${err instanceof Error ? err.message : String(err)}`);
   }

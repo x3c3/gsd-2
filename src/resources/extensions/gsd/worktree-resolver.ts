@@ -414,9 +414,9 @@ export class WorktreeResolver {
     // failure so existing test fixtures that use synthetic paths still pass.
     if (this.s.originalBasePath) {
       try {
-        if (process.cwd() !== this.s.originalBasePath) {
-          process.chdir(this.s.originalBasePath);
-        }
+        // process.cwd() can throw ENOENT when cwd was removed, so attempt
+        // recovery directly.
+        process.chdir(this.s.originalBasePath);
       } catch (err) {
         debugLog("WorktreeResolver", {
           action: "mergeAndExit",
