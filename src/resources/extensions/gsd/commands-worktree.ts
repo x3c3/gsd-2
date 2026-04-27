@@ -112,6 +112,18 @@ export function formatWorktreeList(statuses: WorktreeStatus[]): string {
   return lines.join("\n");
 }
 
+export function formatCleanKeepReason(status: WorktreeStatus): string {
+  if (!status.exists) {
+    return "directory missing — run 'git worktree prune' to unregister";
+  }
+
+  if (status.filesChanged > 0) {
+    return `${status.filesChanged} changed file${status.filesChanged === 1 ? "" : "s"}${status.uncommitted ? ", uncommitted" : ""}`;
+  }
+
+  return "uncommitted changes";
+}
+
 // ─── Subcommand: list ───────────────────────────────────────────────────────
 
 async function handleList(ctx: ExtensionCommandContext): Promise<void> {
@@ -243,13 +255,7 @@ async function handleClean(ctx: ExtensionCommandContext): Promise<void> {
         kept.push(`${wt.name} (failed: ${msg})`);
       }
     } else {
-      const reason = !status.exists
-        ? "directory missing — run 'git worktree prune' to unregister"
-        : status.uncommitted && status.filesChanged > 0
-          ? `has uncommitted changes and ${status.filesChanged} changed file${status.filesChanged === 1 ? "" : "s"}`
-          : status.uncommitted
-            ? "has uncommitted changes"
-            : `${status.filesChanged} changed file${status.filesChanged === 1 ? "" : "s"}`;
+      const reason = formatCleanKeepReason(status);
       kept.push(`${wt.name} (${reason})`);
     }
   }
