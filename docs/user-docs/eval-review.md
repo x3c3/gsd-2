@@ -133,6 +133,6 @@ The ship is never gated on eval status. The notifications are informational only
 
 ## Related
 
-- Issue #5114 — this command's tracking issue.
-- Issue #5115 — `/gsd eval-fix`, the gap-driven fix agent (planned, blocked-by #5114).
-- Issue #4246 — umbrella tracker.
+- Tracking: #5114 — this command's sub-issue.
+- Planned: #5115 — `/gsd eval-fix`, the gap-driven fix agent (blocked-by #5114).
+- Umbrella: #4246 — covers both `eval-review` and `eval-fix`.
