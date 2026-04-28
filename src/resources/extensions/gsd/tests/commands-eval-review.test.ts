@@ -312,6 +312,23 @@ describe("buildEvalReviewContext", () => {
     assert.ok(ctx.spec?.toLowerCase().includes("failed to read"));
   });
 
+  it("does not emit a U+FFFD replacement character when the cap falls mid multi-byte UTF-8 sequence", async () => {
+    const path = join(sliceDir, "S07-SUMMARY.md");
+    const filler = "x".repeat(MAX_CONTEXT_BYTES - 1);
+    const fourByteCodepoint = "\u{1F600}";
+    writeFileSync(path, filler + fourByteCodepoint, "utf-8");
+    const state: Extract<EvalReviewState, { kind: "ready" }> = {
+      kind: "ready",
+      sliceId: "S07",
+      sliceDir,
+      summaryPath: path,
+      specPath: null,
+    };
+    const ctx = await buildEvalReviewContext(state, "M001");
+    assert.equal(ctx.truncated, true);
+    assert.ok(!ctx.summary.includes("�"), "must not contain replacement char at the truncation boundary");
+  });
+
   it("populates outputPath using the canonical slice file naming", async () => {
     const state = fakeReady({ summaryBytes: 64 });
     const ctx = await buildEvalReviewContext(state, "M001");

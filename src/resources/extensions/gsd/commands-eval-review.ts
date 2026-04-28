@@ -270,8 +270,6 @@ export async function buildEvalReviewContext(
   let specTruncated = false;
   if (state.specPath) {
     if (remaining <= 0) {
-      // SUMMARY consumed the entire byte budget — signal the elision rather
-      // than silently dropping the spec for visibility.
       spec = "[truncated: AI-SPEC.md omitted because SUMMARY.md consumed the context cap]";
       specTruncated = true;
     } else {
@@ -280,8 +278,7 @@ export async function buildEvalReviewContext(
         spec = specRead.content;
         specTruncated = specRead.truncated;
       } catch (err) {
-        // The spec is optional — degrade to a marker rather than throwing.
-        // A malformed/unreadable AI-SPEC.md must not block /gsd eval-review.
+        // spec is optional — degrade rather than throw
         const msg = err instanceof Error ? err.message : String(err);
         spec = `[truncated: failed to read AI-SPEC.md (${msg})]`;
         specTruncated = true;
@@ -323,7 +320,8 @@ async function readCapped(filePath: string, maxBytes: number): Promise<CappedRea
       truncated: false,
     };
   }
-  const head = buf.subarray(0, maxBytes).toString("utf-8");
+  // stream: true drops any trailing partial UTF-8 sequence instead of emitting U+FFFD.
+  const head = new TextDecoder("utf-8").decode(buf.subarray(0, maxBytes), { stream: true });
   const elided = buf.byteLength - maxBytes;
   return {
     content: `${head}\n\n[truncated: ${elided} bytes elided to fit eval-review context cap of ${maxBytes} bytes]\n`,
