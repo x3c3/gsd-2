@@ -26,6 +26,7 @@ import {
   parseEvalReviewArgs,
   type EvalReviewState,
 } from "../commands-eval-review.js";
+import { GSD_COMMAND_DESCRIPTION, TOP_LEVEL_SUBCOMMANDS } from "../commands/catalog.js";
 import { _clearGsdRootCache } from "../paths.js";
 
 // ─── parseEvalReviewArgs ──────────────────────────────────────────────────────
@@ -340,6 +341,23 @@ describe("findEvalReviewFile", () => {
     writeFileSync(target, "---\nschema: eval-review/v1\n---\n", "utf-8");
     const found = findEvalReviewFile(basePath, "M001", "S07");
     assert.equal(found, target);
+  });
+});
+
+// ─── Catalog registration (regression for bdc9c2131 lesson — forgetting to wire) ──
+
+describe("catalog registration", () => {
+  it("includes eval-review in TOP_LEVEL_SUBCOMMANDS", () => {
+    const entry = TOP_LEVEL_SUBCOMMANDS.find((c) => c.cmd === "eval-review");
+    assert.ok(entry, "eval-review must be present in TOP_LEVEL_SUBCOMMANDS");
+    assert.ok((entry?.desc ?? "").length > 0, "eval-review entry must have a non-empty description");
+  });
+
+  it("appends eval-review to the GSD_COMMAND_DESCRIPTION pipe-separated list", () => {
+    assert.ok(
+      GSD_COMMAND_DESCRIPTION.includes("|eval-review"),
+      "GSD_COMMAND_DESCRIPTION must include the eval-review token (pipe-prefixed)",
+    );
   });
 });
 
