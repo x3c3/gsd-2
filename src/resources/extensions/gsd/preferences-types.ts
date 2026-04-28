@@ -151,6 +151,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "language",
   "context_window_override",
   "context_mode",
+  "planning_depth",
 ]);
 
 /** Canonical list of all dispatch unit types. */

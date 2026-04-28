@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 
 import { hasPendingDeepStage } from "../auto-dispatch.ts";
 import type { GSDPreferences } from "../preferences.ts";
+import { loadEffectiveGSDPreferences } from "../preferences.ts";
 
 function makeBase(): string {
   const base = join(tmpdir(), `gsd-deep-pending-${randomUUID()}`);
@@ -65,6 +66,32 @@ test("hasPendingDeepStage: returns true in deep mode when only some gates pass",
       "---\nplanning_depth: deep\nworkflow_prefs_captured: true\n---\n",
     );
     assert.equal(hasPendingDeepStage(deepPrefs, base), true);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// Regression test for the bug found while debugging /gsd new-project --deep:
+// `planning_depth` was missing from KNOWN_PREFERENCE_KEYS, validatePreferences,
+// and mergePreferences, so it was stripped on every load. The deep-mode flow
+// silently never triggered because every dispatch saw planning_depth: undefined.
+test("loadEffectiveGSDPreferences: planning_depth survives the validate + merge pipeline", () => {
+  const base = makeBase();
+  try {
+    writeFileSync(
+      join(base, ".gsd", "PREFERENCES.md"),
+      "---\nplanning_depth: deep\n---\n",
+    );
+    const loaded = loadEffectiveGSDPreferences(base);
+    assert.equal(
+      loaded?.preferences?.planning_depth,
+      "deep",
+      "planning_depth must survive load — see KNOWN_PREFERENCE_KEYS, validatePreferences, mergePreferences",
+    );
+    // Cross-check: the dispatch helper reads loaded.preferences, so it must
+    // see the same value. If planning_depth gets stripped anywhere in the
+    // pipeline, hasPendingDeepStage returns false and the deep flow dies.
+    assert.equal(hasPendingDeepStage(loaded?.preferences, base), true);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

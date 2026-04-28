@@ -462,6 +462,7 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
       ? { ...(base.slice_parallel ?? {}), ...(override.slice_parallel ?? {}) }
       : undefined,
     language: override.language ?? base.language,
+    planning_depth: override.planning_depth ?? base.planning_depth,
   };
 }
 
