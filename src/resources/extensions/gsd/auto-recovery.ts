@@ -40,7 +40,6 @@ import {
   resolveMilestoneFile,
   clearPathCache,
   resolveGsdRootFile,
-  gsdRoot,
 } from "./paths.js";
 import {
   existsSync,
@@ -57,6 +56,7 @@ import {
 } from "./auto-artifact-paths.js";
 import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
 import { validateArtifact } from "./schemas/validate.js";
+import { getProjectResearchStatus } from "./project-research-policy.js";
 
 // Re-export so existing consumers of auto-recovery.ts keep working.
 export { resolveExpectedArtifactPath, diagnoseExpectedArtifact };
@@ -66,9 +66,6 @@ export {
 } from "./milestone-summary-classifier.js";
 
 // ─── Artifact Resolution & Verification ───────────────────────────────────────
-
-const PROJECT_RESEARCH_DIMENSIONS = ["STACK", "FEATURES", "ARCHITECTURE", "PITFALLS"] as const;
-const PROJECT_RESEARCH_BLOCKER = "PROJECT-RESEARCH-BLOCKER.md";
 
 function hasCapturedWorkflowPrefs(base: string): boolean {
   const prefsPath = resolveExpectedArtifactPath("workflow-preferences", "WORKFLOW-PREFS", base);
@@ -90,19 +87,7 @@ function hasValidResearchDecision(base: string): boolean {
 }
 
 function hasCompleteProjectResearch(base: string): boolean {
-  const researchDir = join(gsdRoot(base), "research");
-  if (!existsSync(researchDir)) return false;
-  if (existsSync(join(researchDir, PROJECT_RESEARCH_BLOCKER))) return false;
-  let completedDimensions = 0;
-  let blockerDimensions = 0;
-  for (const name of PROJECT_RESEARCH_DIMENSIONS) {
-    if (existsSync(join(researchDir, `${name}.md`))) completedDimensions += 1;
-    else if (existsSync(join(researchDir, `${name}-BLOCKER.md`))) blockerDimensions += 1;
-  }
-  return (
-    completedDimensions + blockerDimensions === PROJECT_RESEARCH_DIMENSIONS.length &&
-    completedDimensions > 0
-  );
+  return getProjectResearchStatus(base).complete;
 }
 
 /**

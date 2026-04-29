@@ -18,7 +18,6 @@ import { loadFile, parseSummary, resolveAllOverrides } from "./files.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { isAwaitingUserInput } from "./user-input-boundary.js";
 import {
-  gsdRoot,
   resolveSliceFile,
   resolveSlicePath,
   resolveTaskFile,
@@ -75,6 +74,10 @@ import { writeTurnGitTransaction } from "./uok/gitops.js";
 import { isClosedStatus } from "./status-guards.js";
 import { detectAbandonMilestone } from "./abandon-detect.js";
 import { isDeterministicPolicyError } from "./auto-tool-tracking.js";
+import {
+  clearProjectResearchInflightMarker,
+  finalizeProjectResearchTimeout,
+} from "./project-research-policy.js";
 
 /** Maximum verification retry attempts before escalating to blocker placeholder (#2653). */
 const MAX_VERIFICATION_RETRIES = 3;
@@ -935,10 +938,35 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
 
       if (s.currentUnit.type === "research-project") {
         try {
-          const inflightMarker = join(gsdRoot(s.basePath), "runtime", "research-project-inflight");
-          if (existsSync(inflightMarker)) unlinkSync(inflightMarker);
+          clearProjectResearchInflightMarker(s.basePath);
         } catch (e) {
           debugLog("postUnit", { phase: "research-project-inflight-cleanup", error: String(e) });
+        }
+      }
+
+      if (!triggerArtifactVerified && s.currentUnit.type === "research-project") {
+        const retryKey = `${s.currentUnit.type}:${s.currentUnit.id}`;
+        const outcome = finalizeProjectResearchTimeout(
+          s.basePath,
+          "Project research unit ended before all required dimensions produced durable files.",
+        );
+        s.pendingVerificationRetry = null;
+        s.verificationRetryCount.delete(retryKey);
+        triggerArtifactVerified = verifyExpectedArtifact(s.currentUnit.type, s.currentUnit.id, s.basePath);
+        if (triggerArtifactVerified) {
+          invalidateAllCaches();
+          ctx.ui.notify(
+            outcome.kind === "partial-blockers"
+              ? "Project research finished partially; wrote blockers for missing dimensions and advancing without rerunning all scouts."
+              : "Project research artifacts are now terminal.",
+            "warning",
+          );
+        } else {
+          ctx.ui.notify(
+            "Project research produced no usable research files; wrote PROJECT-RESEARCH-BLOCKER.md and continuing fail-closed.",
+            "error",
+          );
+          return "continue";
         }
       }
 

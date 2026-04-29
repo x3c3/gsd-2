@@ -89,6 +89,129 @@ const VALID_REQUIREMENTS_MD = [
   "",
 ].join("\n");
 
+const TINY_TODO_PROJECT_MD = [
+  "# Personal Todo App",
+  "",
+  "## What This Is",
+  "",
+  "A personal todo app - static HTML/CSS/JS, no backend, no accounts. Single file, runs in the browser locally or from a file.",
+  "",
+  "## Core Value",
+  "",
+  "Fast task capture with minimal friction.",
+  "",
+  "## Current State",
+  "",
+  "Greenfield browser-based app. Tasks persist in localStorage.",
+  "",
+  "## Architecture / Key Patterns",
+  "",
+  "Pure HTML/CSS/JS, client-only, no build step, no server.",
+  "",
+  "## Capability Contract",
+  "",
+  "See `.gsd/REQUIREMENTS.md`.",
+  "",
+  "## Milestone Sequence",
+  "",
+  "- [ ] M001: Todo App - build one-page local task capture",
+  "",
+].join("\n");
+
+const TINY_TODO_REQUIREMENTS_MD = [
+  "# Requirements",
+  "",
+  "## Active",
+  "",
+  "### R001 - Fast task capture",
+  "- Class: primary-user-loop",
+  "- Status: active",
+  "- Description: User can add a task quickly from the browser.",
+  "- Why it matters: This is the core loop.",
+  "- Source: user",
+  "- Primary owning slice: M001/none yet",
+  "- Supporting slices: none",
+  "- Validation: Add a task from the page.",
+  "- Notes: single file",
+  "",
+  "### R002 - Task completion with done section",
+  "- Class: primary-user-loop",
+  "- Status: active",
+  "- Description: User can mark a task done and see it in a done section.",
+  "- Why it matters: Completion is part of the todo loop.",
+  "- Source: user",
+  "- Primary owning slice: M001/none yet",
+  "- Supporting slices: none",
+  "- Validation: Mark a task done from the page.",
+  "- Notes: static html",
+  "",
+  "### R003 - Optional due date on tasks",
+  "- Class: core-capability",
+  "- Status: active",
+  "- Description: User can add an optional due date to a task.",
+  "- Why it matters: It adds useful context without priority systems.",
+  "- Source: user",
+  "- Primary owning slice: M001/none yet",
+  "- Supporting slices: none",
+  "- Validation: Add a task with a due date.",
+  "- Notes: browser-based",
+  "",
+  "### R004 - Static HTML/CSS/JS, no backend",
+  "- Class: constraint",
+  "- Status: active",
+  "- Description: The app is static HTML/CSS/JS with no backend, no server, and no build step.",
+  "- Why it matters: The project must stay tiny and local.",
+  "- Source: user",
+  "- Primary owning slice: M001/none yet",
+  "- Supporting slices: none",
+  "- Validation: Open the file directly in a browser.",
+  "- Notes: client-only",
+  "",
+  "### R005 - Tasks persist across page reloads",
+  "- Class: continuity",
+  "- Status: active",
+  "- Description: Tasks persist in localStorage across reloads.",
+  "- Why it matters: The app remains useful after the tab closes.",
+  "- Source: user",
+  "- Primary owning slice: M001/none yet",
+  "- Supporting slices: none",
+  "- Validation: Reload the page and see saved tasks.",
+  "- Notes: localStorage",
+  "",
+  "## Validated",
+  "",
+  "## Deferred",
+  "",
+  "## Out of Scope",
+  "",
+  "### R006 - No sync or accounts",
+  "- Class: anti-feature",
+  "- Status: out-of-scope",
+  "- Description: The app does not support sync, accounts, or cloud storage.",
+  "- Why it matters: Keeps the project local and simple.",
+  "- Source: user",
+  "- Primary owning slice: none",
+  "- Supporting slices: none",
+  "- Validation: No account or sync flow exists.",
+  "- Notes: no accounts",
+  "",
+  "## Traceability",
+  "",
+  "| ID | Class | Status | Primary owner | Supporting | Proof |",
+  "|---|---|---|---|---|---|",
+  "| R001 | primary-user-loop | active | M001/none yet | none | unmapped |",
+  "| R002 | primary-user-loop | active | M001/none yet | none | unmapped |",
+  "| R003 | core-capability | active | M001/none yet | none | unmapped |",
+  "| R004 | constraint | active | M001/none yet | none | unmapped |",
+  "| R005 | continuity | active | M001/none yet | none | unmapped |",
+  "| R006 | anti-feature | out-of-scope | none | none | excluded |",
+  "",
+  "## Coverage Summary",
+  "",
+  "- Active requirements: 5",
+  "",
+].join("\n");
+
 function makeIsolatedBase(): string {
   const base = join(tmpdir(), `gsd-deep-planning-${randomUUID()}`);
   mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
@@ -111,6 +234,11 @@ function writeValidProject(base: string): void {
 
 function writeValidRequirements(base: string): void {
   writeFileSync(join(base, ".gsd", "REQUIREMENTS.md"), VALID_REQUIREMENTS_MD);
+}
+
+function writeTinyTodoProject(base: string): void {
+  writeFileSync(join(base, ".gsd", "PROJECT.md"), TINY_TODO_PROJECT_MD);
+  writeFileSync(join(base, ".gsd", "REQUIREMENTS.md"), TINY_TODO_REQUIREMENTS_MD);
 }
 
 function makeCtx(
@@ -430,6 +558,82 @@ test("Deep mode: research-project DOES dispatch when decision is 'research' and 
     existsSync(join(base, ".gsd", "runtime", "research-project-inflight")),
     "dispatch must create the in-flight marker before returning",
   );
+});
+
+test("Deep mode: research-project auto-skips tiny static apps when research was workflow-defaulted", async (t) => {
+  const base = makeIsolatedBaseWithCleanup(t);
+
+  writeFileSync(
+    join(base, ".gsd", "PREFERENCES.md"),
+    "---\nplanning_depth: deep\nworkflow_prefs_captured: true\n---\n",
+  );
+  writeTinyTodoProject(base);
+  mkdirSync(join(base, ".gsd", "runtime"), { recursive: true });
+  writeFileSync(
+    join(base, ".gsd", "runtime", "research-decision.json"),
+    JSON.stringify({
+      decision: "research",
+      decided_at: "2026-04-27T00:00:00Z",
+      source: "workflow-preferences",
+    }),
+  );
+
+  const prefs = { planning_depth: "deep" } as GSDPreferences;
+  const result = await rule(RESEARCH_PROJECT_RULE_NAME).match(makeCtx(base, prefs));
+
+  assert.strictEqual(result, null, "tiny project should fall through after rewriting decision to skip");
+  assert.equal(
+    existsSync(join(base, ".gsd", "runtime", "research-project-inflight")),
+    false,
+    "fast path must not claim the research-project in-flight marker",
+  );
+
+  const decision = JSON.parse(readFileSync(join(base, ".gsd", "runtime", "research-decision.json"), "utf-8"));
+  assert.equal(decision.decision, "skip");
+  assert.equal(decision.source, "project-research-fast-path");
+  assert.equal(decision.previous_source, "workflow-preferences");
+  assert.equal(decision.reason, "trivial-static-local-project");
+  assert.equal(decision.classifier_variant, "trivial");
+  assert.equal(getDeepStageGate(prefs, base).status, "complete");
+});
+
+test("Deep mode: research-project honors explicit research decisions for tiny static apps", async (t) => {
+  const base = makeIsolatedBaseWithCleanup(t);
+
+  writeTinyTodoProject(base);
+  mkdirSync(join(base, ".gsd", "runtime"), { recursive: true });
+  writeFileSync(
+    join(base, ".gsd", "runtime", "research-decision.json"),
+    JSON.stringify({ decision: "research", decided_at: "2026-04-27T00:00:00Z" }),
+  );
+
+  const prefs = { planning_depth: "deep" } as GSDPreferences;
+  const result = await rule(RESEARCH_PROJECT_RULE_NAME).match(makeCtx(base, prefs));
+
+  assert.ok(result && result.action === "dispatch", "missing source means conservative explicit research");
+  assert.equal(existsSync(join(base, ".gsd", "runtime", "research-project-inflight")), true);
+});
+
+test("Deep mode: research-project still dispatches non-trivial workflow-defaulted research", async (t) => {
+  const base = makeIsolatedBaseWithCleanup(t);
+
+  writeValidProject(base);
+  writeValidRequirements(base);
+  mkdirSync(join(base, ".gsd", "runtime"), { recursive: true });
+  writeFileSync(
+    join(base, ".gsd", "runtime", "research-decision.json"),
+    JSON.stringify({
+      decision: "research",
+      decided_at: "2026-04-27T00:00:00Z",
+      source: "workflow-preferences",
+    }),
+  );
+
+  const prefs = { planning_depth: "deep" } as GSDPreferences;
+  const result = await rule(RESEARCH_PROJECT_RULE_NAME).match(makeCtx(base, prefs));
+
+  assert.ok(result && result.action === "dispatch");
+  assert.equal(existsSync(join(base, ".gsd", "runtime", "research-project-inflight")), true);
 });
 
 test("Deep mode: research-project clears in-flight marker when prompt assembly fails", async (t) => {

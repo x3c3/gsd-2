@@ -8,10 +8,12 @@ import { randomUUID } from "node:crypto";
 
 import { runPreDispatch } from "../auto/phases.ts";
 import { AutoSession } from "../auto/session.ts";
+import { resolveUnitSupervisionTimeouts } from "../auto-timers.ts";
 import { bootstrapAutoSession } from "../auto-start.ts";
 import { isAwaitingUserInput, postUnitPreVerification } from "../auto-post-unit.ts";
 import { resolveDispatch, setResearchProjectPromptBuilderForTest } from "../auto-dispatch.ts";
 import { resolveExpectedArtifactPath, verifyExpectedArtifact, writeBlockerPlaceholder } from "../auto-recovery.ts";
+import { finalizeProjectResearchTimeout } from "../project-research-policy.ts";
 import { resetRegistry } from "../rule-registry.ts";
 import {
   clearPendingAutoStart,
@@ -743,6 +745,147 @@ test("deep project setup: research-project blocker placeholder is a file, not th
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
+});
+
+test("deep project setup: research-project partial output writes dimension blockers instead of retrying", async () => {
+  const base = makeBase();
+  try {
+    const s = new AutoSession();
+    s.active = true;
+    s.basePath = base;
+    s.currentUnit = { type: "research-project", id: "RESEARCH-PROJECT", startedAt: Date.now() };
+
+    mkdirSync(join(base, ".gsd", "runtime"), { recursive: true });
+    writeFileSync(join(base, ".gsd", "runtime", "research-project-inflight"), "{}\n");
+    mkdirSync(join(base, ".gsd", "research"), { recursive: true });
+    writeFileSync(join(base, ".gsd", "research", "STACK.md"), "# Stack\n");
+
+    const notifications: string[] = [];
+    const result = await postUnitPreVerification(
+      {
+        s,
+        ctx: { ui: { notify: (message: string) => notifications.push(message) } } as any,
+        pi: {} as any,
+        buildSnapshotOpts: () => ({}) as any,
+        lockBase: () => base,
+        stopAuto: async () => {},
+        pauseAuto: async () => {},
+        updateProgressWidget: () => {},
+      },
+      { skipSettleDelay: true, skipWorktreeSync: true },
+    );
+
+    assert.equal(result, "continue");
+    assert.equal(existsSync(join(base, ".gsd", "runtime", "research-project-inflight")), false);
+    for (const name of ["FEATURES", "ARCHITECTURE", "PITFALLS"]) {
+      assert.equal(existsSync(join(base, ".gsd", "research", `${name}-BLOCKER.md`)), true);
+    }
+    assert.equal(verifyExpectedArtifact("research-project", "RESEARCH-PROJECT", base), true);
+    assert.equal(s.pendingVerificationRetry, null);
+    assert.equal(s.verificationRetryCount.size, 0);
+    assert.ok(
+      notifications.some((message) => message.includes("without rerunning all scouts")),
+      "should notify that partial research was finalized without another full fan-out",
+    );
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("deep project setup: research-project empty output writes global blocker without retrying", async () => {
+  const base = makeBase();
+  try {
+    const s = new AutoSession();
+    s.active = true;
+    s.basePath = base;
+    s.currentUnit = { type: "research-project", id: "RESEARCH-PROJECT", startedAt: Date.now() };
+
+    mkdirSync(join(base, ".gsd", "runtime"), { recursive: true });
+    writeFileSync(join(base, ".gsd", "runtime", "research-project-inflight"), "{}\n");
+
+    const notifications: string[] = [];
+    const result = await postUnitPreVerification(
+      {
+        s,
+        ctx: { ui: { notify: (message: string) => notifications.push(message) } } as any,
+        pi: {} as any,
+        buildSnapshotOpts: () => ({}) as any,
+        lockBase: () => base,
+        stopAuto: async () => {},
+        pauseAuto: async () => {},
+        updateProgressWidget: () => {},
+      },
+      { skipSettleDelay: true, skipWorktreeSync: true },
+    );
+
+    assert.equal(result, "continue");
+    assert.equal(existsSync(join(base, ".gsd", "runtime", "research-project-inflight")), false);
+    assert.equal(existsSync(join(base, ".gsd", "research", "PROJECT-RESEARCH-BLOCKER.md")), true);
+    assert.equal(verifyExpectedArtifact("research-project", "RESEARCH-PROJECT", base), false);
+    assert.equal(s.pendingVerificationRetry, null);
+    assert.equal(s.verificationRetryCount.size, 0);
+    assert.ok(
+      notifications.some((message) => message.includes("PROJECT-RESEARCH-BLOCKER.md")),
+      "should notify that project research is fail-closed",
+    );
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("deep project setup: project research timeout finalizer removes stale marker", () => {
+  const base = makeBase();
+  try {
+    mkdirSync(join(base, ".gsd", "runtime"), { recursive: true });
+    writeFileSync(join(base, ".gsd", "runtime", "research-project-inflight"), "{}\n");
+
+    const outcome = finalizeProjectResearchTimeout(base, "test hard timeout");
+
+    assert.equal(outcome.kind, "global-blocker");
+    assert.equal(existsSync(join(base, ".gsd", "runtime", "research-project-inflight")), false);
+    assert.equal(existsSync(join(base, ".gsd", "research", "PROJECT-RESEARCH-BLOCKER.md")), true);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("deep project setup: research-project supervision timeout is capped narrowly", () => {
+  const defaults = {
+    soft_timeout_minutes: 20,
+    idle_timeout_minutes: 10,
+    hard_timeout_minutes: 30,
+  };
+
+  assert.deepEqual(
+    resolveUnitSupervisionTimeouts("research-project", defaults, 1),
+    {
+      softTimeoutMs: 3 * 60 * 1000,
+      idleTimeoutMs: 10 * 60 * 1000,
+      hardTimeoutMs: 5 * 60 * 1000,
+    },
+  );
+
+  assert.deepEqual(
+    resolveUnitSupervisionTimeouts("research-project", {
+      soft_timeout_minutes: 2,
+      idle_timeout_minutes: 10,
+      hard_timeout_minutes: 4,
+    }, 1),
+    {
+      softTimeoutMs: 2 * 60 * 1000,
+      idleTimeoutMs: 10 * 60 * 1000,
+      hardTimeoutMs: 4 * 60 * 1000,
+    },
+  );
+
+  assert.deepEqual(
+    resolveUnitSupervisionTimeouts("plan-slice", defaults, 2),
+    {
+      softTimeoutMs: 40 * 60 * 1000,
+      idleTimeoutMs: 10 * 60 * 1000,
+      hardTimeoutMs: 60 * 60 * 1000,
+    },
+  );
 });
 
 test("deep project setup: empty legacy pseudo-milestone dirs do not block first real milestone", async () => {

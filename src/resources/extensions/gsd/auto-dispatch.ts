@@ -70,6 +70,12 @@ import { isAutoActive } from "./auto.js";
 import { markDepthVerified } from "./bootstrap/write-gate.js";
 import { ensureWorkflowPreferencesCaptured } from "./planning-depth.js";
 import { MILESTONE_ID_RE } from "./milestone-ids.js";
+import {
+  classifyProjectResearchScope,
+  getProjectResearchStatus,
+  writeProjectResearchAutoSkipDecision,
+  PROJECT_RESEARCH_INFLIGHT_MARKER,
+} from "./project-research-policy.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -129,9 +135,6 @@ export interface DispatchRule {
   match: (ctx: DispatchContext) => Promise<DispatchAction | null>;
 }
 
-const PROJECT_RESEARCH_DIMENSIONS = ["STACK", "FEATURES", "ARCHITECTURE", "PITFALLS"] as const;
-const PROJECT_RESEARCH_BLOCKER = "PROJECT-RESEARCH-BLOCKER.md";
-
 export type DeepProjectStage =
   | "workflow-preferences"
   | "project"
@@ -144,46 +147,6 @@ export type DeepStageGate =
   | { status: "complete"; stage: null; reason: string }
   | { status: "pending"; stage: DeepProjectStage; reason: string }
   | { status: "blocked"; stage: DeepProjectStage; reason: string };
-
-function isProjectResearchDimensionSatisfied(researchDir: string, name: string): boolean {
-  return (
-    existsSync(join(researchDir, `${name}.md`)) ||
-    existsSync(join(researchDir, `${name}-BLOCKER.md`))
-  );
-}
-
-function getProjectResearchStatus(researchDir: string): {
-  complete: boolean;
-  blocked: boolean;
-  allDimensionBlockers: boolean;
-  globalBlocker: boolean;
-  missingDimensions: string[];
-} {
-  const globalBlocker = existsSync(join(researchDir, PROJECT_RESEARCH_BLOCKER));
-
-  let completedDimensions = 0;
-  let blockerDimensions = 0;
-  const missingDimensions: string[] = [];
-  for (const name of PROJECT_RESEARCH_DIMENSIONS) {
-    if (existsSync(join(researchDir, `${name}.md`))) completedDimensions += 1;
-    else if (existsSync(join(researchDir, `${name}-BLOCKER.md`))) blockerDimensions += 1;
-    else missingDimensions.push(name);
-  }
-
-  const allSatisfied = PROJECT_RESEARCH_DIMENSIONS.every((name) =>
-    isProjectResearchDimensionSatisfied(researchDir, name),
-  );
-  const allDimensionBlockers = allSatisfied && completedDimensions === 0 && blockerDimensions === PROJECT_RESEARCH_DIMENSIONS.length;
-  const blocked = globalBlocker || allDimensionBlockers;
-
-  return {
-    complete: allSatisfied && !blocked,
-    blocked,
-    allDimensionBlockers,
-    globalBlocker,
-    missingDimensions,
-  };
-}
 
 async function readUatGateVerdict(
   basePath: string,
@@ -324,8 +287,7 @@ export function getDeepStageGate(prefs: GSDPreferences | undefined, basePath: st
       };
     }
     if (decision === "research") {
-      const researchDir = join(root, "research");
-      const researchStatus = getProjectResearchStatus(researchDir);
+      const researchStatus = getProjectResearchStatus(basePath);
       if (researchStatus.globalBlocker) {
         return {
           status: "blocked",
@@ -814,16 +776,37 @@ export const DISPATCH_RULES: DispatchRule[] = [
       const decisionPath = join(gsdRoot(basePath), "runtime", "research-decision.json");
       if (!existsSync(decisionPath)) return null; // research-decision rule handles
       let decision: string | undefined;
+      let decisionSource: string | undefined;
       try {
         const cfg = JSON.parse(readFileSync(decisionPath, "utf-8")) as Record<string, unknown>;
         decision = typeof cfg.decision === "string" ? cfg.decision : undefined;
+        decisionSource = typeof cfg.source === "string" ? cfg.source : undefined;
       } catch (err) {
         logWarning("dispatch", `malformed research-decision.json — leaving for research-decision rule to re-ask: ${err instanceof Error ? err.message : String(err)}`);
         return null;
       }
       if (decision !== "research") return null; // user picked "skip" — fall through
-      const researchDir = join(gsdRoot(basePath), "research");
-      const researchStatus = getProjectResearchStatus(researchDir);
+      try {
+        const projectPath = join(gsdRoot(basePath), "PROJECT.md");
+        if (
+          decisionSource === "workflow-preferences" &&
+          existsSync(projectPath) &&
+          validateArtifact(projectPath, "project").ok &&
+          validateArtifact(requirementsPath, "requirements").ok
+        ) {
+          const classification = classifyProjectResearchScope(
+            readFileSync(projectPath, "utf-8"),
+            readFileSync(requirementsPath, "utf-8"),
+          );
+          if (classification.variant === "trivial") {
+            writeProjectResearchAutoSkipDecision(basePath, classification);
+            return null;
+          }
+        }
+      } catch (err) {
+        logWarning("dispatch", `project research fast-path classification failed — running research: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      const researchStatus = getProjectResearchStatus(basePath);
       if (researchStatus.blocked) {
         const blockerReason = researchStatus.globalBlocker
           ? "Project research wrote PROJECT-RESEARCH-BLOCKER.md, so no verified research exists."
@@ -839,7 +822,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // Idempotency guard: one orchestrator owns the project research fan-out
       // until guided-research-project.md deletes this marker during closeout.
       const runtimeDir = join(gsdRoot(basePath), "runtime");
-      const inflightMarkerPath = join(runtimeDir, "research-project-inflight");
+      const inflightMarkerPath = join(runtimeDir, PROJECT_RESEARCH_INFLIGHT_MARKER);
       const researchInFlightStop = {
         action: "stop" as const,
         reason:
