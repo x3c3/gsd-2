@@ -679,7 +679,7 @@ describe('db-writer', () => {
     }
   });
 
-  test('saveArtifactToDb — final REQUIREMENTS renders from canonical DB rows', async () => {
+  test('saveArtifactToDb — final REQUIREMENTS renders from DB rows, ignoring caller-supplied markdown', async () => {
     const tmpDir = makeTmpDir();
     const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
     openDatabase(dbPath);
@@ -728,23 +728,25 @@ describe('db-writer', () => {
       ].join('\n');
       fs.writeFileSync(filePath, bloatedInvalidContent);
 
-      const canonicalContent = generateRequirementsMd([canonicalRequirement]);
-
       assert.ok(
-        Buffer.byteLength(canonicalContent, 'utf-8') < Buffer.byteLength(bloatedInvalidContent, 'utf-8') * 0.5,
-        'test setup: canonical content is small enough that the generic shrinkage guard would trigger',
+        Buffer.byteLength(generateRequirementsMd([canonicalRequirement]), 'utf-8') < Buffer.byteLength(bloatedInvalidContent, 'utf-8') * 0.5,
+        'test setup: DB-rendered content is small enough that the generic shrinkage guard would trigger',
       );
 
       await saveArtifactToDb({
         path: relPath,
         artifact_type: 'REQUIREMENTS',
-        content: '# Requirements\n\n## Active\n\n### R999 — Wrong markdown source\n\n- Description: This input must not become canonical.\n',
+        content: bloatedInvalidContent,
       }, tmpDir);
 
-      assert.deepStrictEqual(
-        fs.readFileSync(filePath, 'utf-8'),
-        canonicalContent,
-        'final REQUIREMENTS save overwrites bloated existing file',
+      const writtenContent = fs.readFileSync(filePath, 'utf-8');
+      assert.ok(
+        writtenContent.includes('R001') && writtenContent.includes('User can add a task'),
+        'disk file contains DB-sourced R001 requirement',
+      );
+      assert.ok(
+        !writtenContent.includes('Duplicate retry row'),
+        'disk file does not contain caller-supplied bloated content',
       );
 
       const adapter = _getAdapter();
@@ -760,10 +762,14 @@ describe('db-writer', () => {
       const artifact = adapter!
         .prepare('SELECT full_content FROM artifacts WHERE path = ?')
         .get(relPath) as Record<string, unknown>;
-      assert.deepStrictEqual(
-        artifact['full_content'],
-        canonicalContent,
-        'artifact row stores canonical content',
+      const storedContent = artifact['full_content'] as string;
+      assert.ok(
+        storedContent.includes('R001') && storedContent.includes('User can add a task'),
+        'artifacts.full_content is DB-rendered output containing R001',
+      );
+      assert.ok(
+        !storedContent.includes('Duplicate retry row'),
+        'artifacts.full_content does not echo caller-supplied markdown payload',
       );
     } finally {
       closeDatabase();

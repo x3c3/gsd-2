@@ -899,8 +899,8 @@ test("executeSummarySave rejects final REQUIREMENTS when the DB source is empty"
     }, base));
 
     assert.equal(result.isError, true);
-    assert.equal(result.details.error, "requirements_table_empty");
-    assert.match(result.content[0].text, /requires active DB-backed requirements/);
+    assert.equal(result.details.error, "no_active_requirements");
+    assert.match(result.content[0].text, /no active requirements found/);
   } finally {
     closeDatabase();
     cleanup(base);

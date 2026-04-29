@@ -1217,6 +1217,18 @@ test("deep project setup: remote question failure is treated as waiting for user
   );
 });
 
+test("deep project setup: user question does not masquerade as assistant input wait", () => {
+  assert.equal(
+    isAwaitingUserInput([
+      {
+        role: "user",
+        content: "Should we proceed?",
+      },
+    ]),
+    false,
+  );
+});
+
 test("deep project setup: plain-text approval wait is treated as waiting for user input", () => {
   assert.equal(
     isAwaitingUserInput([

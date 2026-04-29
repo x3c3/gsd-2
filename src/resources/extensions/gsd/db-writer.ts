@@ -304,9 +304,7 @@ export async function saveRequirementToDb(
     const db = await import('./gsd-db.js');
 
     // Atomic ID assignment + insert inside a transaction.
-    let createdNewRow = false;
-    let previousRequirement: Requirement | null = null;
-    const id = db.transaction(() => {
+    const txResult = db.transaction(() => {
       const adapter = db._getAdapter();
       if (!adapter) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
 
@@ -320,7 +318,7 @@ export async function saveRequirementToDb(
            LIMIT 1`,
         )
         .get({ ':description': fields.description });
-      previousRequirement = existingRow
+      const previousRow: Requirement | null = existingRow
         ? {
             id: existingRow['id'] as string,
             class: existingRow['class'] as string,
@@ -341,7 +339,6 @@ export async function saveRequirementToDb(
         .prepare('SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) as max_num FROM requirements')
         .get();
       const maxNum = row ? (row['max_num'] as number | null) : null;
-      createdNewRow = !existingRow;
       const nextId = existingRow
         ? String(existingRow['id'])
         : (maxNum == null || isNaN(maxNum))
@@ -364,8 +361,9 @@ export async function saveRequirementToDb(
       };
 
       db.upsertRequirement(requirement);
-      return nextId;
+      return { id: nextId, isNew: !existingRow, previousRow };
     });
+    const { id, isNew, previousRow } = txResult;
 
     // Fetch all requirements for full file regeneration
     const adapter = db._getAdapter();
@@ -396,10 +394,10 @@ export async function saveRequirementToDb(
     } catch (diskErr) {
       logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveRequirementToDb', error: String((diskErr as Error).message) });
       try {
-        if (createdNewRow) {
+        if (isNew) {
           db.deleteRequirementById(id);
-        } else if (previousRequirement) {
-          db.upsertRequirement(previousRequirement);
+        } else if (previousRow) {
+          db.upsertRequirement(previousRow);
         }
       } catch (rollbackErr) {
         logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveRequirementToDb', id, error: String((rollbackErr as Error).message) });

@@ -147,8 +147,8 @@ export async function executeSummarySave(
       : null;
     if (params.artifact_type === "REQUIREMENTS" && activeRequirements?.length === 0) {
       return {
-        content: [{ type: "text", text: "Error saving artifact: REQUIREMENTS final save requires active DB-backed requirements. Save requirements with gsd_requirement_save first." }],
-        details: { operation: "save_summary", error: "requirements_table_empty" },
+        content: [{ type: "text", text: "Error: Cannot save REQUIREMENTS artifact — no active requirements found in the database. Call gsd_requirement_save for each requirement before calling gsd_summary_save(REQUIREMENTS)." }],
+        details: { operation: "save_summary", error: "no_active_requirements" },
         isError: true,
       };
     }
