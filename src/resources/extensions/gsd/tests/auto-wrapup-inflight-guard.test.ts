@@ -214,6 +214,10 @@ describe("deep setup approval questions pause immediately", () => {
       "plain-text approval questions must set the durable write gate",
     );
     assert.ok(
+      messageUpdateSection.includes("getDiscussionMilestoneIdFor") && messageUpdateSection.includes('"discuss-milestone"'),
+      "foreground milestone discussion questions must also set the durable write gate",
+    );
+    assert.ok(
       !messageUpdateSection.includes("ctx.abort()"),
       "message_update must NOT abort the stream — aborting eats the model's question text on external CLI providers; the pending gate set above blocks subsequent tool calls instead",
     );
