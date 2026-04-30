@@ -17,6 +17,7 @@ import { EventEmitter } from 'node:events';
 
 import { SessionManager } from './session-manager.js';
 import {
+  askUserQuestionsHandler,
   buildAskUserQuestionsElicitRequest,
   createMcpServer,
   formatAskUserQuestionsElicitResult,
@@ -782,6 +783,85 @@ describe('createMcpServer tool registration', () => {
         },
       }),
     );
+  });
+
+  it('ask_user_questions returns local elicitation answers before trying remote', async () => {
+    const questions = [
+      {
+        id: 'depth_verification_M001',
+        header: 'Depth Check',
+        question: 'Did I capture the depth right?',
+        options: [
+          { label: 'Yes, you got it (Recommended)', description: 'Continue with the current summary.' },
+          { label: 'Not quite', description: 'I need to clarify the depth further.' },
+        ],
+      },
+    ];
+    let remoteCalls = 0;
+
+    const result = await askUserQuestionsHandler(questions, undefined, {
+      async elicitInput() {
+        return {
+          action: 'accept',
+          content: {
+            depth_verification_M001: 'Yes, you got it (Recommended)',
+          },
+        };
+      },
+      isRemoteConfigured() {
+        return true;
+      },
+      async tryRemoteQuestions() {
+        remoteCalls++;
+        return { content: [{ type: 'text', text: 'remote response' }] };
+      },
+    });
+
+    assert.equal(remoteCalls, 0);
+    assert.equal(
+      result.content[0]?.text,
+      JSON.stringify({
+        answers: {
+          depth_verification_M001: {
+            answers: ['Yes, you got it (Recommended)'],
+          },
+        },
+      }),
+    );
+  });
+
+  it('ask_user_questions falls back to remote when local elicitation is cancelled', async () => {
+    const questions = [
+      {
+        id: 'depth_verification_M001',
+        header: 'Depth Check',
+        question: 'Did I capture the depth right?',
+        options: [
+          { label: 'Yes, you got it (Recommended)', description: 'Continue with the current summary.' },
+          { label: 'Not quite', description: 'I need to clarify the depth further.' },
+        ],
+      },
+    ];
+    let remoteCalls = 0;
+    const signal = AbortSignal.abort();
+
+    const result = await askUserQuestionsHandler(questions, { signal }, {
+      async elicitInput() {
+        return { action: 'cancel' };
+      },
+      isRemoteConfigured() {
+        return true;
+      },
+      async tryRemoteQuestions(remoteQuestions, receivedSignal) {
+        remoteCalls++;
+        assert.equal(remoteQuestions, questions);
+        assert.equal(receivedSignal, signal);
+        return { content: [{ type: 'text', text: 'remote response' }] };
+      },
+    });
+
+    assert.equal(remoteCalls, 1);
+    assert.equal(result.content[0]?.text, 'remote response');
   });
 });
 

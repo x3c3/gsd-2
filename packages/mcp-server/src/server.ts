@@ -17,6 +17,7 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import type { SessionManager } from './session-manager.js';
 import { isRemoteConfigured, tryRemoteQuestions } from './remote-questions.js';
+import type { RemoteToolResult } from './remote-questions.js';
 import { readProgress } from './readers/state.js';
 import { readRoadmap } from './readers/roadmap.js';
 import { readHistory } from './readers/metrics.js';
@@ -387,6 +388,52 @@ export function formatAskUserQuestionsElicitResult(
   return JSON.stringify({ answers });
 }
 
+interface AskUserQuestionsHandlerDeps {
+  elicitInput(params: AskUserQuestionsElicitRequest): Promise<AskUserQuestionsElicitResult>;
+  isRemoteConfigured(): boolean;
+  tryRemoteQuestions(questions: AskUserQuestion[], signal?: AbortSignal): Promise<RemoteToolResult | null>;
+}
+
+export async function askUserQuestionsHandler(
+  questions: AskUserQuestion[],
+  extra: McpToolExtra | undefined,
+  deps: AskUserQuestionsHandlerDeps,
+): Promise<ToolContent> {
+  try {
+    const validationError = validateAskUserQuestionsPayload(questions);
+    if (validationError) return errorContent(validationError);
+
+    // Local-first: try the MCP host's elicitation channel (Claude Code,
+    // Cursor, etc.) before any configured remote channel. A misconfigured
+    // remote (e.g. expired Discord token returning 401) must not block the
+    // depth-verification gate when the user is sitting in front of the host.
+    const elicitation = await withElicitTimeout(
+      deps.elicitInput(buildAskUserQuestionsElicitRequest(questions)),
+      'ask_user_questions',
+    );
+    if (elicitation.action === 'accept' && elicitation.content) {
+      return textContent(formatAskUserQuestionsElicitResult(questions, elicitation));
+    }
+
+    // Local cancelled / unavailable — fall back to the configured remote
+    // channel (Discord, Slack, Telegram) if one is set.
+    if (deps.isRemoteConfigured()) {
+      const remoteResult = await deps.tryRemoteQuestions(questions, extra?.signal);
+      if (remoteResult) {
+        const details = remoteResult.details as Record<string, unknown> | undefined;
+        if (details?.['timed_out'] || details?.['error']) {
+          return textContent(remoteResult.content[0]?.text ?? 'Remote questions timed out or failed');
+        }
+        return textContent(remoteResult.content[0]?.text ?? '');
+      }
+    }
+
+    return textContent('ask_user_questions was cancelled before receiving a response');
+  } catch (err) {
+    return errorContent(err instanceof Error ? err.message : String(err));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // secure_env_collect handler (extracted so tests can drive it directly)
 // ---------------------------------------------------------------------------
@@ -750,39 +797,11 @@ export async function createMcpServer(
     },
     async (args: Record<string, unknown>, extra?: McpToolExtra) => {
       const { questions } = args as unknown as AskUserQuestionsParams;
-      try {
-        const validationError = validateAskUserQuestionsPayload(questions);
-        if (validationError) return errorContent(validationError);
-
-        // Local-first: try the MCP host's elicitation channel (Claude Code,
-        // Cursor, etc.) before any configured remote channel. A misconfigured
-        // remote (e.g. expired Discord token returning 401) must not block the
-        // depth-verification gate when the user is sitting in front of the host.
-        const elicitation = await withElicitTimeout(
-          server.server.elicitInput(buildAskUserQuestionsElicitRequest(questions)),
-          'ask_user_questions',
-        );
-        if (elicitation.action === 'accept' && elicitation.content) {
-          return textContent(formatAskUserQuestionsElicitResult(questions, elicitation));
-        }
-
-        // Local cancelled / unavailable — fall back to the configured remote
-        // channel (Discord, Slack, Telegram) if one is set.
-        if (isRemoteConfigured()) {
-          const remoteResult = await tryRemoteQuestions(questions, extra?.signal);
-          if (remoteResult) {
-            const details = remoteResult.details as Record<string, unknown> | undefined;
-            if (details?.['timed_out'] || details?.['error']) {
-              return textContent(remoteResult.content[0]?.text ?? 'Remote questions timed out or failed');
-            }
-            return textContent(remoteResult.content[0]?.text ?? '');
-          }
-        }
-
-        return textContent('ask_user_questions was cancelled before receiving a response');
-      } catch (err) {
-        return errorContent(err instanceof Error ? err.message : String(err));
-      }
+      return askUserQuestionsHandler(questions, extra, {
+        elicitInput: (params) => server.server.elicitInput(params),
+        isRemoteConfigured,
+        tryRemoteQuestions,
+      });
     },
   );
 
