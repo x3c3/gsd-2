@@ -72,7 +72,11 @@ function defaultExecFn(
     // stdout: ignore — consumer only cares about stderr + exit code, and an
     //   un-drained pipe deadlocks once the kernel buffer (~64KB) fills.
     // stderr: pipe — captured below for error surfacing.
-    const child = spawn(cmd, args, { stdio: [opts?.stdin === undefined ? 'ignore' : 'pipe', 'ignore', 'pipe'] });
+    const child = spawn(resolveShellCommand(cmd), args, {
+      shell: process.platform === 'win32',
+      stdio: [opts?.stdin === undefined ? 'ignore' : 'pipe', 'ignore', 'pipe'],
+      windowsHide: true,
+    });
     let stderr = '';
     child.stdin?.on('error', () => {
       // Child exited before consuming stdin; close/error handling below will
@@ -87,6 +91,13 @@ function defaultExecFn(
     child.on('error', (err) => res({ code: 1, stderr: err.message }));
     child.on('close', (code) => res({ code: code ?? 1, stderr }));
   });
+}
+
+function resolveShellCommand(cmd: string): string {
+  if (process.platform !== 'win32') return cmd;
+  if (cmd === 'vercel') return 'vercel.cmd';
+  if (cmd === 'npx') return 'npx.cmd';
+  return cmd;
 }
 
 /**
