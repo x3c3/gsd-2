@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWriteSync } from "./atomic-write.js";
 import {
   gsdRoot,
   relSliceFile,
@@ -65,8 +66,6 @@ export function writeUnitRuntimeRecord(
   startedAt: number,
   updates: Partial<AutoUnitRuntimeRecord> = {},
 ): AutoUnitRuntimeRecord {
-  const dir = runtimeDir(basePath);
-  mkdirSync(dir, { recursive: true });
   const path = runtimePath(basePath, unitType, unitId);
   const prev = readUnitRuntimeRecord(basePath, unitType, unitId);
   const next: AutoUnitRuntimeRecord = {
@@ -86,7 +85,7 @@ export function writeUnitRuntimeRecord(
     recoveryAttempts: updates.recoveryAttempts ?? prev?.recoveryAttempts ?? 0,
     lastRecoveryReason: updates.lastRecoveryReason ?? prev?.lastRecoveryReason,
   };
-  writeFileSync(path, JSON.stringify(next, null, 2) + "\n", "utf-8");
+  atomicWriteSync(path, JSON.stringify(next, null, 2) + "\n", "utf-8");
   return next;
 }
 

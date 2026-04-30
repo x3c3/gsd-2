@@ -1165,8 +1165,7 @@ export async function pauseAuto(
       milestoneLock: s.sessionMilestoneLock ?? undefined,
     };
     const runtimeDir = join(gsdRoot(s.originalBasePath || s.basePath), "runtime");
-    mkdirSync(runtimeDir, { recursive: true });
-    writeFileSync(
+    atomicWriteSync(
       join(runtimeDir, "paused-session.json"),
       JSON.stringify(pausedMeta, null, 2),
       "utf-8",

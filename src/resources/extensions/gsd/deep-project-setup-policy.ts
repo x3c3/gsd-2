@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { GSDPreferences } from "./preferences.js";
+import { atomicWriteSync } from "./atomic-write.js";
 import { clearParseCache } from "./files.js";
 import { gsdRoot, clearPathCache } from "./paths.js";
 import { validateArtifact } from "./schemas/validate.js";
@@ -60,7 +61,6 @@ export function writeDefaultResearchSkipDecision(
   reason = "deterministic-default",
   previousSource?: string,
 ): void {
-  mkdirSync(runtimeDir(basePath), { recursive: true });
   const payload: Record<string, unknown> = {
     decision: "skip",
     decided_at: new Date().toISOString(),
@@ -68,7 +68,7 @@ export function writeDefaultResearchSkipDecision(
     reason,
   };
   if (previousSource) payload.previous_source = previousSource;
-  writeFileSync(researchDecisionPath(basePath), `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+  atomicWriteSync(researchDecisionPath(basePath), `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
   clearCaches();
 }
 
