@@ -2,7 +2,8 @@
  * Workflow MCP tools — exposes the core GSD mutation/read handlers over MCP.
  */
 
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
@@ -378,6 +379,50 @@ function resolveActiveWorktreeBasePath(
   return wtPath;
 }
 
+/**
+ * Fallback when the tool call has no milestoneId: if exactly one auto-worktree
+ * exists under `<projectRoot>/.gsd/worktrees/`, treat it as the active one.
+ * Multiple worktrees → ambiguous, return null and let writes go to project root.
+ */
+function resolveSoleActiveWorktree(projectRoot: string): string | null {
+  const worktreesDir = join(projectRoot, ".gsd", "worktrees");
+  if (!existsSync(worktreesDir)) return null;
+  let entries: string[];
+  try {
+    entries = readdirSync(worktreesDir);
+  } catch {
+    return null;
+  }
+  const live = entries
+    .map((name) => join(worktreesDir, name))
+    .filter((p) => existsSync(join(p, ".git")));
+  if (live.length !== 1) return null;
+  return live[0];
+}
+
+function isHomeDirectory(candidate: string): boolean {
+  let resolvedHome: string;
+  try {
+    resolvedHome = realpathSync(resolve(homedir()));
+  } catch {
+    resolvedHome = resolve(homedir());
+  }
+  let resolvedCandidate: string;
+  try {
+    resolvedCandidate = realpathSync(resolve(candidate));
+  } catch {
+    resolvedCandidate = resolve(candidate);
+  }
+  return resolvedCandidate === resolvedHome;
+}
+
+export function _parseWorkflowArgsForTest<T extends { projectDir?: string }>(
+  schema: z.ZodType<T>,
+  args: Record<string, unknown>,
+): T & { projectDir: string } {
+  return parseWorkflowArgs(schema, args);
+}
+
 function parseWorkflowArgs<T extends { projectDir?: string }>(
   schema: z.ZodType<T>,
   args: Record<string, unknown>,
@@ -387,14 +432,28 @@ function parseWorkflowArgs<T extends { projectDir?: string }>(
   // projectDir — default to process.cwd() which the MCP server inherited from
   // Claude Code (launched at the project root).
   const projectRootCandidate = parsed.projectDir ?? process.cwd();
+
+  // Defense-in-depth: refuse when the resolved candidate is the user's home
+  // directory. The MCP server's process.cwd() can be $HOME if launched from
+  // an unusual context; honoring it would write project artifacts into ~/.gsd.
+  if (isHomeDirectory(projectRootCandidate)) {
+    throw new Error(
+      `projectDir resolves to the user's home directory (${projectRootCandidate}). ` +
+      `Run the workflow tool from inside a project directory, or pass an explicit projectDir.`,
+    );
+  }
+
   const projectRoot = validateProjectDir(projectRootCandidate);
 
   // Step 2: if this tool call is scoped to a milestone that has an active
   // auto-worktree, re-route writes to the worktree's .gsd rather than the
   // project's shared .gsd. auto-mode's verifyExpectedArtifact runs against
   // the worktree, and a mismatch here causes every unit to retry once.
+  // When the agent omits milestoneId, fall back to the sole live worktree
+  // if exactly one exists — that's the active auto-mode session.
   const milestoneId = extractMilestoneId(parsed as Record<string, unknown>);
-  const worktreeBasePath = resolveActiveWorktreeBasePath(projectRoot, milestoneId);
+  const worktreeBasePath = resolveActiveWorktreeBasePath(projectRoot, milestoneId)
+    ?? (milestoneId ? null : resolveSoleActiveWorktree(projectRoot));
   const effectiveBasePath = worktreeBasePath ?? projectRoot;
 
   return {

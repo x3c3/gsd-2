@@ -15,7 +15,7 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from "nod
 import { join } from "node:path";
 import { gsdRoot } from "./paths.js";
 import { loadJsonFileOrNull } from "./json-persistence.js";
-import { projectRoot } from "./commands/context.js";
+import { currentDirectoryRoot } from "./commands/context.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -244,7 +244,7 @@ function summarizeDebugLog(filePath: string): {
 // ─── Main Handler ───────────────────────────────────────────────────────────
 
 export async function handleLogs(args: string, ctx: ExtensionCommandContext): Promise<void> {
-  const basePath = projectRoot();
+  const basePath = currentDirectoryRoot();
   const parts = args.trim().split(/\s+/).filter(Boolean);
   const subCmd = parts[0] ?? "";
 
