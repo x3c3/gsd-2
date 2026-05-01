@@ -1,11 +1,10 @@
 /**
  * complete-task handler — the core operation behind gsd_complete_task.
  *
- * Validates inputs, writes task row to DB in a transaction, then (outside
- * the transaction) renders SUMMARY.md to disk, toggles the plan checkbox,
- * stores the rendered markdown in the DB for D004 recovery, and invalidates
- * caches. Projection write failures are reported as stale projections and do
- * not roll back committed DB state.
+ * Validates inputs, writes task row and rendered SUMMARY.md to DB in a
+ * transaction, then renders projections to disk and invalidates caches.
+ * Projection write failures are reported as stale projections and do not roll
+ * back committed DB state.
  */
 
 import { join } from "node:path";
@@ -23,7 +22,6 @@ import {
   getSlice,
   getTask,
   updateTaskStatus,
-  setTaskSummaryMd,
   deleteVerificationEvidence,
   saveGateResult,
   getPendingGatesForTurn,
@@ -169,6 +167,7 @@ export async function handleCompleteTask(
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
   const completedAt = new Date().toISOString();
   let guardError: string | null = null;
+  let summaryMd = "";
 
   // ── ADR-011 Phase 2: validate escalation payload BEFORE any side effects ─
   // Building the artifact runs the full shape validation (2-4 options, unique
@@ -238,6 +237,9 @@ export async function handleCompleteTask(
     }
 
     // All guards passed — perform writes
+    const taskRow = paramsToTaskRow(params, completedAt);
+    summaryMd = renderSummaryContent(taskRow, params.sliceId, params.milestoneId, params.verificationEvidence ?? []);
+
     insertMilestone({ id: params.milestoneId, title: params.milestoneId });
     insertSlice({ id: params.sliceId, milestoneId: params.milestoneId, title: params.sliceId });
     insertTask({
@@ -255,6 +257,7 @@ export async function handleCompleteTask(
       knownIssues: params.knownIssues ?? "None.",
       keyFiles: params.keyFiles ?? [],
       keyDecisions: params.keyDecisions ?? [],
+      fullSummaryMd: summaryMd,
     });
 
     for (const evidence of (params.verificationEvidence ?? [])) {
@@ -302,10 +305,6 @@ export async function handleCompleteTask(
     return { error: guardError };
   }
 
-  // Render summary markdown via the single source of truth (#2720)
-  const taskRow = paramsToTaskRow(params, completedAt);
-  const summaryMd = renderSummaryContent(taskRow, params.sliceId, params.milestoneId, params.verificationEvidence ?? []);
-  setTaskSummaryMd(params.milestoneId, params.sliceId, params.taskId, summaryMd);
   let projectionStale = false;
 
   // Resolve and write summary to disk

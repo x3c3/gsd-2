@@ -195,6 +195,7 @@ import {
 import { isDbAvailable, getMilestone } from "./gsd-db.js";
 import { countPendingCaptures } from "./captures.js";
 import { CMUX_CHANNELS, type CmuxLogLevel } from "../shared/cmux-events.js";
+import { ensureDbOpen } from "./bootstrap/dynamic-tools.js";
 
 function makeCmuxEmitters(pi: ExtensionAPI) {
   return {
@@ -1511,8 +1512,16 @@ export async function startAuto(
           // fallback only for unmigrated/offline projects.
           const mDir = resolveMilestonePath(base, meta.milestoneId);
           let summaryIsTerminal = false;
-          if (isDbAvailable()) {
-            const milestoneRow = getMilestone(meta.milestoneId);
+          let dbAvailable = isDbAvailable();
+          let milestoneRow = dbAvailable ? getMilestone(meta.milestoneId) : null;
+          if (!milestoneRow) {
+            const opened = await ensureDbOpen(base);
+            dbAvailable = opened || isDbAvailable();
+            if (dbAvailable) {
+              milestoneRow = getMilestone(meta.milestoneId);
+            }
+          }
+          if (dbAvailable) {
             summaryIsTerminal = !!milestoneRow && isClosedStatus(milestoneRow.status);
           } else {
             const summaryFile = resolveMilestoneFile(base, meta.milestoneId, "SUMMARY");

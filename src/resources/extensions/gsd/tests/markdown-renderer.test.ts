@@ -892,6 +892,11 @@ test('── markdown-renderer: missing artifact regenerates from DB without imp
     assert.ok(after !== null, 'artifact regenerated in DB');
     assert.ok(!after!.full_content.includes('DISK_ONLY_SENTINEL'), 'disk projection content was not imported');
     assert.ok(after!.full_content.includes('S01'), 'DB artifact reflects DB slice state');
+
+    assert.ok(fs.existsSync(roadmapPath), 'roadmap projection regenerated on disk');
+    const diskAfter = fs.readFileSync(roadmapPath, 'utf-8');
+    assert.ok(!diskAfter.includes('DISK_ONLY_SENTINEL'), 'disk projection was rewritten from DB');
+    assert.ok(diskAfter.includes('S01'), 'disk projection reflects DB slice state');
   } finally {
     closeDatabase();
     cleanupDir(tmpDir);

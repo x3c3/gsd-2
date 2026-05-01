@@ -459,6 +459,10 @@ export function syncStateToProjectRoot(
   // project root and never appear in the dashboard or skill-health reports.
   safeCopy(join(wtGsd, "metrics.json"), join(prGsd, "metrics.json"), { force: true });
 
+  // completed-units.json — runtime completion diagnostics used to avoid
+  // re-dispatching work already completed in an isolated worktree.
+  safeCopy(join(wtGsd, "completed-units.json"), join(prGsd, "completed-units.json"), { force: true });
+
   // Runtime records — unit dispatch diagnostics used by selfHealRuntimeRecords().
   // Without this, a crash during a unit leaves the runtime record only in the
   // worktree. If the next session resolves basePath before worktree re-entry,
@@ -1586,7 +1590,7 @@ export function mergeMilestoneToMain(
       const contract = resolveGsdPathContract(worktreeCwd, originalBasePath_);
       const worktreeDbPath = join(contract.worktreeGsd ?? join(worktreeCwd, ".gsd"), "gsd.db");
       const mainDbPath = contract.projectDb;
-      if (!isSamePath(worktreeDbPath, mainDbPath)) {
+      if (existsSync(worktreeDbPath) && !isSamePath(worktreeDbPath, mainDbPath)) {
         reconcileWorktreeDb(mainDbPath, worktreeDbPath);
       }
     } catch (err) {

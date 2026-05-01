@@ -58,6 +58,19 @@ test("#2313: syncStateToProjectRoot should sync metrics.json", () => {
   );
 });
 
+test("syncStateToProjectRoot should back-sync completed-units.json", () => {
+  const syncSrcPath = join(import.meta.dirname, "..", "auto-worktree.ts");
+  const syncSrc = readFileSync(syncSrcPath, "utf-8");
+  const fnIdx = syncSrc.indexOf("export function syncStateToProjectRoot(");
+  assert.ok(fnIdx !== -1, "syncStateToProjectRoot exists");
+  const fnBlock = syncSrc.slice(fnIdx, syncSrc.indexOf("// ─── Resource Staleness", fnIdx));
+
+  assert.ok(
+    fnBlock.includes('"completed-units.json"'),
+    "syncStateToProjectRoot should copy completed-units.json back to the project root",
+  );
+});
+
 test("#2313: syncWorktreeStateBack should include metrics.json in ROOT_DIAGNOSTIC_FILES", () => {
   const autoWorktreeSrcPath = join(import.meta.dirname, "..", "auto-worktree.ts");
   const autoWorktreeSrc = readFileSync(autoWorktreeSrcPath, "utf-8");
