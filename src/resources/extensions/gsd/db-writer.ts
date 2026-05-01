@@ -318,23 +318,6 @@ export async function saveRequirementToDb(
            LIMIT 1`,
         )
         .get({ ':description': fields.description });
-      const previousRow: Requirement | null = existingRow
-        ? {
-            id: existingRow['id'] as string,
-            class: existingRow['class'] as string,
-            status: existingRow['status'] as string,
-            description: existingRow['description'] as string,
-            why: existingRow['why'] as string,
-            source: existingRow['source'] as string,
-            primary_owner: existingRow['primary_owner'] as string,
-            supporting_slices: existingRow['supporting_slices'] as string,
-            validation: existingRow['validation'] as string,
-            notes: existingRow['notes'] as string,
-            full_content: existingRow['full_content'] as string,
-            superseded_by: (existingRow['superseded_by'] as string) ?? null,
-          }
-        : null;
-
       const row = adapter
         .prepare('SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) as max_num FROM requirements')
         .get();
@@ -361,9 +344,9 @@ export async function saveRequirementToDb(
       };
 
       db.upsertRequirement(requirement);
-      return { id: nextId, isNew: !existingRow, previousRow };
+      return { id: nextId };
     });
-    const { id, isNew, previousRow } = txResult;
+    const { id } = txResult;
 
     // Fetch all requirements for full file regeneration
     const adapter = db._getAdapter();
@@ -392,17 +375,7 @@ export async function saveRequirementToDb(
     try {
       await saveFile(filePath, md);
     } catch (diskErr) {
-      logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveRequirementToDb', error: String((diskErr as Error).message) });
-      try {
-        if (isNew) {
-          db.deleteRequirementById(id);
-        } else if (previousRow) {
-          db.upsertRequirement(previousRow);
-        }
-      } catch (rollbackErr) {
-        logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveRequirementToDb', id, error: String((rollbackErr as Error).message) });
-      }
-      throw diskErr;
+      logWarning('projection', 'REQUIREMENTS.md projection write failed; DB requirement remains committed', { fn: 'saveRequirementToDb', id, error: String((diskErr as Error).message) });
     }
     invalidateStateCache();
     clearPathCache();
@@ -538,13 +511,7 @@ export async function saveDecisionToDb(
     try {
       await saveFile(filePath, md);
     } catch (diskErr) {
-      logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveDecisionToDb', error: String((diskErr as Error).message) });
-      try {
-        db.deleteDecisionById(id);
-      } catch (rollbackErr) {
-        logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveDecisionToDb', id, error: String((rollbackErr as Error).message) });
-      }
-      throw diskErr;
+      logWarning('projection', 'DECISIONS.md projection write failed; DB decision remains committed', { fn: 'saveDecisionToDb', id, error: String((diskErr as Error).message) });
     }
     // #2661: When a decision defers a slice, update the slice status in the DB
     // so the dispatcher skips it. Without this, STATE.md and DECISIONS.md are
@@ -667,34 +634,7 @@ export async function updateRequirementInDb(
   try {
     const db = await import('./gsd-db.js');
 
-    let existing = db.getRequirementById(id);
-
-    // If requirement doesn't exist in DB, seed the entire requirements table
-    // from REQUIREMENTS.md first (#3346). This handles the standard workflow
-    // where requirements are authored in markdown during discussion but never
-    // imported into the database — making gsd_requirement_update always fail
-    // with "not_found" at milestone completion.
-    if (!existing) {
-      const reqFilePath = resolveGsdRootFile(basePath, 'REQUIREMENTS');
-      try {
-        const content = readFileSync(reqFilePath, 'utf-8');
-        const { parseRequirementsSections } = await import('./md-importer.js');
-        const parsed = parseRequirementsSections(content);
-        if (parsed.length > 0) {
-          logWarning('manifest', `Seeding ${parsed.length} requirements from REQUIREMENTS.md into DB (first update triggers import)`, { fn: 'updateRequirementInDb' });
-          for (const req of parsed) {
-            // Only seed if not already in DB (avoid overwriting concurrent inserts)
-            if (!db.getRequirementById(req.id)) {
-              db.upsertRequirement(req);
-            }
-          }
-          // Re-check after seeding
-          existing = db.getRequirementById(id);
-        }
-      } catch {
-        // REQUIREMENTS.md missing or unparseable — fall through to skeleton
-      }
-    }
+    const existing = db.getRequirementById(id);
 
     const base: Requirement = existing ?? {
       id,
@@ -750,11 +690,7 @@ export async function updateRequirementInDb(
     try {
       await saveFile(filePath, md);
     } catch (diskErr) {
-      logError('manifest', 'disk write failed, reverting DB row', { fn: 'updateRequirementInDb', error: String((diskErr as Error).message) });
-      if (existing) {
-        db.upsertRequirement(existing);
-      }
-      throw diskErr;
+      logWarning('projection', 'REQUIREMENTS.md projection write failed; DB requirement update remains committed', { fn: 'updateRequirementInDb', id, error: String((diskErr as Error).message) });
     }
     // Invalidate file-read caches so deriveState() sees the updated markdown.
     // Do NOT clear the artifacts table — we just wrote to it intentionally.
@@ -805,20 +741,19 @@ export async function saveArtifactToDb(
       contentToPersist = generateRequirementsMd(activeRequirements);
     }
 
-    // Shrinkage guard: if the file already exists and the new content is
-    // significantly smaller (<50%), preserve the richer file on disk and
-    // store its content in the DB instead of the abbreviated version. Root
-    // canonical artifacts are exempt because their content is rendered from
-    // canonical DB state, and cleanup/consolidation is often intentionally much
-    // smaller than a malformed accumulated file.
-    let dbContent = contentToPersist;
+    // Shrinkage guard: if the projection file already exists and the new
+    // content is significantly smaller (<50%), preserve the richer file on
+    // disk, but keep the DB row authoritative with the caller-provided content.
+    // The disk file is a stale projection until the next explicit render.
+    // Root canonical artifacts are exempt because their content is rendered
+    // from canonical DB state, and cleanup/consolidation is often intentionally
+    // much smaller than a malformed accumulated file.
     let skipDiskWrite = false;
     if (!isRootCanonicalArtifact(opts) && existsSync(fullPath)) {
       const existingSize = statSync(fullPath).size;
       const newSize = Buffer.byteLength(contentToPersist, 'utf-8');
       if (existingSize > 0 && newSize < existingSize * 0.5) {
-        logWarning('manifest', `new content (${newSize}B) is <50% of existing file (${existingSize}B), preserving disk file`, { fn: 'saveArtifactToDb', path: opts.path });
-        dbContent = readFileSync(fullPath, 'utf-8');
+        logWarning('projection', `new content (${newSize}B) is <50% of existing projection (${existingSize}B), preserving disk file while DB remains authoritative`, { fn: 'saveArtifactToDb', path: opts.path });
         skipDiskWrite = true;
       }
     }
@@ -829,7 +764,7 @@ export async function saveArtifactToDb(
       milestone_id: opts.milestone_id ?? null,
       slice_id: opts.slice_id ?? null,
       task_id: opts.task_id ?? null,
-      full_content: dbContent,
+      full_content: contentToPersist,
     });
 
     // Write the file to disk (only if we're not preserving a richer existing file)
@@ -837,9 +772,7 @@ export async function saveArtifactToDb(
       try {
         await saveFile(fullPath, contentToPersist);
       } catch (diskErr) {
-        logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveArtifactToDb', error: String((diskErr as Error).message) });
-        db.deleteArtifactByPath(opts.path);
-        throw diskErr;
+        logWarning('projection', 'artifact projection write failed; DB artifact remains committed', { fn: 'saveArtifactToDb', path: opts.path, error: String((diskErr as Error).message) });
       }
     }
     // Invalidate file-read caches so deriveState() sees the updated markdown.

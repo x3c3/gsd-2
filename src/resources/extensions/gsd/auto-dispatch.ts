@@ -14,7 +14,7 @@ import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
 import type { MinimalModelRegistry } from "./context-budget.js";
 import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
-import { isDbAvailable, getMilestoneSlices, getPendingGates, markAllGatesOmitted, getMilestone, updateMilestoneStatus } from "./gsd-db.js";
+import { isDbAvailable, getMilestoneSlices, getPendingGates, markAllGatesOmitted, getMilestone } from "./gsd-db.js";
 import { isClosedStatus } from "./status-guards.js";
 import { extractVerdict, isAcceptableUatVerdict } from "./verdict-parser.js";
 
@@ -35,7 +35,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "
 import { logWarning, logError } from "./workflow-logger.js";
 import { join } from "node:path";
 import { hasImplementationArtifacts } from "./auto-recovery.js";
-import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
 import {
   buildDiscussMilestonePrompt,
   buildDiscussProjectPrompt,
@@ -854,13 +853,9 @@ export const DISPATCH_RULES: DispatchRule[] = [
     // while a slice is still `is_sketch=1`, fall through to a standard
     // plan-slice so the loop doesn't dead-end.
     //
-    // Note on the flag-OFF downgrade: plan-slice does not explicitly clear
-    // `is_sketch`. After it writes PLAN.md, the auto-heal in state.ts's
-    // `deriveStateFromDb` (via `autoHealSketchFlags`) flips the flag on the
-    // next iteration. That implicit coupling is the sole mechanism that
-    // reconciles `is_sketch=1` on the plan-slice path — do not remove the
-    // auto-heal without either adding an explicit `setSliceSketchFlag(..., false)`
-    // call here or doing so inside the plan-slice tool handler.
+    // Note on the flag-OFF downgrade: DB slice metadata is authoritative.
+    // PLAN.md is only a projection, so plan-slice/refine-slice handlers must
+    // explicitly clear `is_sketch` when a sketch becomes a full plan.
     name: "refining → refine-slice",
     match: async ({ state, mid, midTitle, basePath, prefs, sessionContextWindow, modelRegistry, sessionProvider }) => {
       if (state.phase !== "refining") return null;
@@ -1239,15 +1234,6 @@ export const DISPATCH_RULES: DispatchRule[] = [
         }
       }
 
-      const existingSummary = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      let summaryOutcome: "success" | "failure" | "unknown" = "unknown";
-      if (existingSummary) {
-        const summaryContent = await loadFile(existingSummary);
-        if (summaryContent) {
-          summaryOutcome = classifyMilestoneSummaryContent(summaryContent);
-        }
-      }
-
       // Safety guard (#2675): block completion when VALIDATION verdict is
       // needs-remediation. The state machine treats needs-remediation as
       // terminal (to prevent validate-milestone loops per #832), but
@@ -1328,48 +1314,6 @@ export const DISPATCH_RULES: DispatchRule[] = [
         }
       } catch (err) { /* fall through — don't block on DB errors */
         logWarning("dispatch", `verification class check failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-
-      // Disk/DB mismatch handling (#4658): SUMMARY presence alone is not enough.
-      // Apply post-gate policy:
-      // - success summary: reconcile DB and skip re-dispatch
-      // - failure summary: pause/fail-closed
-      // - unknown summary: pause/fail-closed
-      if (existingSummary) {
-        const milestone = isDbAvailable() ? getMilestone(mid) : null;
-        const status = milestone?.status ?? (isDbAvailable() ? "missing" : "unavailable");
-
-        if (summaryOutcome === "success") {
-          if (!isDbAvailable()) {
-            logWarning("dispatch", `Milestone ${mid} SUMMARY indicates completion while DB is unavailable — skipping duplicate complete-milestone dispatch`);
-            return { action: "skip" };
-          }
-          try {
-            updateMilestoneStatus(mid, "complete", new Date().toISOString());
-            logWarning("dispatch", `Milestone ${mid} SUMMARY indicates completion while DB status was "${status}" — reconciled DB to complete (#4658)`);
-            return { action: "skip" };
-          } catch (err) {
-            return {
-              action: "stop",
-              level: "warning",
-              reason: `Milestone ${mid} SUMMARY indicates completion but DB reconciliation failed (${err instanceof Error ? err.message : String(err)}). Auto-mode paused for manual review.`,
-            };
-          }
-        }
-
-        if (summaryOutcome === "failure") {
-          return {
-            action: "stop",
-            level: "warning",
-            reason: `Milestone ${mid} has a failure-path SUMMARY while DB status is "${status}". Auto-mode will not promote completion from failure artifacts. Re-run complete-milestone only after blockers are resolved and verification passes.`,
-          };
-        }
-
-        return {
-          action: "stop",
-          level: "warning",
-          reason: `Milestone ${mid} has an ambiguous SUMMARY while DB status is "${status}". Auto-mode paused instead of promoting completion from file presence alone.`,
-        };
       }
 
       return {

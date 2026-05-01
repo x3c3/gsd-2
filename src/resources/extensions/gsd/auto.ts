@@ -175,6 +175,7 @@ import { getErrorMessage } from "./error-utils.js";
 import { recoverFailedMigration } from "./migrate-external.js";
 import { initRegistry, convertDispatchRules } from "./rule-registry.js";
 import { emitJournalEvent as _emitJournalEvent, type JournalEntry } from "./journal.js";
+import { isClosedStatus } from "./status-guards.js";
 import {
   type AutoDashboardData,
   updateProgressWidget as _updateProgressWidget,
@@ -194,6 +195,7 @@ import {
 import { isDbAvailable, getMilestone } from "./gsd-db.js";
 import { countPendingCaptures } from "./captures.js";
 import { CMUX_CHANNELS, type CmuxLogLevel } from "../shared/cmux-events.js";
+import { ensureDbOpen } from "./bootstrap/dynamic-tools.js";
 
 function makeCmuxEmitters(pi: ExtensionAPI) {
   return {
@@ -1506,14 +1508,29 @@ export async function startAuto(
           );
         if (shouldResumePausedSession) {
           // Validate the milestone still exists and isn't already complete (#1664).
+          // DB status is authoritative when available; SUMMARY.md is a legacy
+          // fallback only for unmigrated/offline projects.
           const mDir = resolveMilestonePath(base, meta.milestoneId);
-          const summaryFile = resolveMilestoneFile(base, meta.milestoneId, "SUMMARY");
           let summaryIsTerminal = false;
-          if (summaryFile) {
-            try {
-              summaryIsTerminal = classifyMilestoneSummaryContent(readFileSync(summaryFile, "utf-8")) !== "failure";
-            } catch {
-              summaryIsTerminal = false;
+          let dbAvailable = isDbAvailable();
+          let milestoneRow = dbAvailable ? getMilestone(meta.milestoneId) : null;
+          if (!milestoneRow) {
+            const opened = await ensureDbOpen(base);
+            dbAvailable = opened || isDbAvailable();
+            if (dbAvailable) {
+              milestoneRow = getMilestone(meta.milestoneId);
+            }
+          }
+          if (dbAvailable) {
+            summaryIsTerminal = !!milestoneRow && isClosedStatus(milestoneRow.status);
+          } else {
+            const summaryFile = resolveMilestoneFile(base, meta.milestoneId, "SUMMARY");
+            if (summaryFile) {
+              try {
+                summaryIsTerminal = classifyMilestoneSummaryContent(readFileSync(summaryFile, "utf-8")) !== "failure";
+              } catch {
+                summaryIsTerminal = false;
+              }
             }
           }
           if (!mDir || summaryIsTerminal) {
