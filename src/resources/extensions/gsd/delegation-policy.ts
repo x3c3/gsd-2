@@ -124,3 +124,26 @@ export function getVerdictByUnitType(unitType: string): DelegationPolicyEntry | 
   }
   return null;
 }
+
+/**
+ * Minimal shape of a dispatch action that the annotator needs to operate on.
+ * Matches the `dispatch` and non-dispatch variants of auto-dispatch.ts'
+ * DispatchAction without depending on it (so this module stays free of
+ * workspace-package transitive imports).
+ */
+export type AnnotatableDispatchAction =
+  | { action: "dispatch"; unitType: string; backgroundable?: boolean; [k: string]: unknown }
+  | { action: "stop"; [k: string]: unknown }
+  | { action: "skip"; [k: string]: unknown };
+
+/**
+ * Annotates a dispatch action in place with `backgroundable: true` when its
+ * unitType has a `good` verdict in the policy. Stop/skip actions pass through
+ * unchanged. Default-deny: unknown unit types resolve to `false`.
+ */
+export function annotateBackgroundable<T extends AnnotatableDispatchAction>(action: T): T {
+  if (action.action !== "dispatch") return action;
+  const verdict = getVerdictByUnitType(action.unitType);
+  action.backgroundable = verdict?.verdict === "good";
+  return action;
+}
