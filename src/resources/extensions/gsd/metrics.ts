@@ -14,6 +14,7 @@
  */
 
 import { join } from "node:path";
+import { openSync, closeSync, unlinkSync } from "node:fs";
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import { gsdRoot } from "./paths.js";
 import { getAndClearSkills } from "./skill-telemetry.js";
@@ -635,6 +636,60 @@ function deduplicateUnits(units: UnitMetrics[]): UnitMetrics[] {
   return Array.from(map.values());
 }
 
+/**
+ * Acquire an exclusive .lock sentinel file via O_EXCL.
+ * Retries every 50ms up to timeoutMs. Returns true on success, false on timeout.
+ */
+function acquireLock(lockPath: string, timeoutMs = 2000): boolean {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const fd = openSync(lockPath, "wx"); // O_WRONLY | O_CREAT | O_EXCL
+      closeSync(fd);
+      return true;
+    } catch {
+      // Lock held by another process — busy-wait
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      const waitUntil = Date.now() + Math.min(50, remaining);
+      while (Date.now() < waitUntil) { /* spin */ }
+    }
+  }
+  return false;
+}
+
+function releaseLock(lockPath: string): void {
+  try { unlinkSync(lockPath); } catch { /* ignore */ }
+}
+
+/**
+ * Save the ledger with cross-process merge semantics.
+ *
+ * Acquires a .lock sentinel file, reads the current on-disk ledger,
+ * merges worker units with existing peer units (worker's entry wins on
+ * type+id+startedAt conflict since it has the latest finishedAt),
+ * then writes atomically. This prevents parallel auto-mode workers from
+ * silently discarding each other's metrics entries.
+ *
+ * Falls back to a direct write (no merge) if the lock cannot be acquired
+ * within the timeout — better to potentially overwrite than to lose data
+ * entirely.
+ */
 function saveLedger(base: string, data: MetricsLedger): void {
-  saveJsonFile(metricsPath(base), data);
+  const path = metricsPath(base);
+  const lockPath = `${path}.lock`;
+  const acquired = acquireLock(lockPath);
+  try {
+    // Read current on-disk state and merge with worker's in-memory units.
+    // Worker units take precedence on conflict (by finishedAt in deduplicateUnits).
+    const onDisk = loadJsonFileOrNull(path, isMetricsLedger);
+    if (onDisk && onDisk.units.length > 0) {
+      const merged = deduplicateUnits([...onDisk.units, ...data.units]);
+      saveJsonFile(path, { ...data, units: merged });
+    } else {
+      saveJsonFile(path, data);
+    }
+  } finally {
+    if (acquired) releaseLock(lockPath);
+  }
 }
