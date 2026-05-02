@@ -741,9 +741,7 @@ test("executeSummarySave blocks final root artifacts while approval gate is pend
   const base = makeTmpBase();
   try {
     openTestDb(base);
-    await inProjectDir(base, async () => {
-      setPendingGate("depth_verification_requirements_confirm", base);
-    });
+    setPendingGate("depth_verification_requirements_confirm", base);
 
     const result = await inProjectDir(base, () => executeSummarySave({
       artifact_type: "REQUIREMENTS",
@@ -784,9 +782,7 @@ test("executeSummarySave requires verified root approval in deep mode", async ()
     assert.match(blocked.content[0].text, /fail-closed/);
     assert.equal(existsSync(join(base, ".gsd", "PROJECT.md")), false);
 
-    await inProjectDir(base, async () => {
-      markApprovalGateVerified("depth_verification_project_confirm", base);
-    });
+    markApprovalGateVerified("depth_verification_project_confirm", base);
 
     const unblocked = await inProjectDir(base, () => executeSummarySave({
       artifact_type: "PROJECT",
@@ -807,9 +803,7 @@ test("executeSummarySave renders final REQUIREMENTS from the DB source of truth"
   const base = makeTmpBase();
   try {
     openTestDb(base);
-    await inProjectDir(base, async () => {
-      markApprovalGateVerified("depth_verification_requirements_confirm", base);
-    });
+    markApprovalGateVerified("depth_verification_requirements_confirm", base);
 
     upsertRequirement({
       id: "R001",

@@ -28,9 +28,12 @@ test("register-hooks unlocks milestone depth verification from question id witho
   resetWriteGateState(dir);
 
   t.after(() => {
-    resetWriteGateState(dir);
-    process.chdir(originalCwd);
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      resetWriteGateState(dir);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   const handlers = new Map<string, Array<(event: any, ctx?: any) => Promise<void> | void>>();
@@ -104,9 +107,12 @@ test("register-hooks clears depth gate when remote (Telegram/Slack/Discord) answ
   resetWriteGateState(dir);
 
   t.after(() => {
-    resetWriteGateState(dir);
-    process.chdir(originalCwd);
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      resetWriteGateState(dir);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   const handlers = new Map<string, Array<(event: any, ctx?: any) => Promise<void> | void>>();
@@ -170,9 +176,12 @@ test("register-hooks returns hard blocker when depth question is cancelled", asy
   resetWriteGateState(dir);
 
   t.after(() => {
-    resetWriteGateState(dir);
-    process.chdir(originalCwd);
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      resetWriteGateState(dir);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   const handlers = new Map<string, Array<(event: any, ctx?: any) => Promise<any> | any>>();
@@ -231,9 +240,12 @@ test("register-hooks gates MCP ask_user_questions cancellation before requiremen
   resetWriteGateState(dir);
 
   t.after(() => {
-    resetWriteGateState(dir);
-    process.chdir(originalCwd);
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      resetWriteGateState(dir);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   const handlers = new Map<string, Array<(event: any, ctx?: any) => Promise<any> | any>>();

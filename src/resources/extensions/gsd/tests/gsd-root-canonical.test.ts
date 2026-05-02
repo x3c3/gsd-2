@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { gsdRoot, _clearGsdRootCache } from "../paths.ts";
 
@@ -38,7 +39,7 @@ describe("gsdRoot: returns realpath-canonicalized result", () => {
 
   test("gsdRoot via a symlinked project path returns the realpath-canonicalized .gsd", (t) => {
     // Create a symlink pointing to projectDir
-    const linkPath = join(tmpdir(), `gsd-root-link-${Date.now()}`);
+    const linkPath = join(tmpdir(), `gsd-root-link-${randomUUID()}`);
     symlinkSync(projectDir, linkPath);
     t.after(() => {
       try { rmSync(linkPath); } catch { /* ignore */ }

@@ -15,6 +15,7 @@ import {
   _getDbCache,
 } from "../gsd-db.ts";
 import { createWorkspace } from "../workspace.ts";
+import type { GsdWorkspace } from "../workspace.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ describe("openDatabaseByWorkspace: restores previous connection on failure", () 
         isWorktree: false,
       },
       lockRoot: "/does-not-exist-gsd-test-ws-restore",
-    };
+    } satisfies GsdWorkspace;
 
     // This should throw because the path is invalid
     assert.throws(
@@ -100,9 +101,12 @@ describe("openDatabaseByWorkspace: restores previous connection on failure", () 
         isWorktree: false,
       },
       lockRoot: "/does-not-exist-gsd-cache-test",
-    };
+    } satisfies GsdWorkspace;
 
     assert.throws(() => openDatabaseByWorkspace(fakeWs));
+
+    const cache = _getDbCache();
+    assert.ok(cache.has(wsA.identityKey), "cache must retain workspace A's entry after failed switch");
 
     // Workspace A's connection is back as the active connection; switching back
     // should succeed from cache (cache hit path) without re-opening.

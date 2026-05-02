@@ -61,7 +61,7 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
     assert.strictEqual(beforeResult.block, true, 'should block before markDepthVerified');
 
     // Simulate what the dispatch rule now does in auto-mode
-    markDepthVerified('M001');
+    markDepthVerified('M001', process.cwd());
 
     // After mark: unblocked
     const snapshotAfter = loadWriteGateSnapshot(process.cwd());
@@ -87,7 +87,7 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
     assert.strictEqual(beforeResult.block, true, 'write should be blocked before markDepthVerified');
 
     // Simulate dispatch rule auto-mark
-    markDepthVerified('M001');
+    markDepthVerified('M001', process.cwd());
 
     // After mark: unblocked
     const afterResult = shouldBlockContextWrite('write', contextPath, 'M001');
@@ -109,7 +109,7 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
   // the dispatch-site call site is safe regardless of prior session state.
   test('Test 3: session_switch ordering — clearDiscussionFlowState clears mark; dispatch-site call re-establishes it', () => {
     // Simulate a mark from a prior session
-    markDepthVerified('M001');
+    markDepthVerified('M001', process.cwd());
     let snapshot = loadWriteGateSnapshot(process.cwd());
     assert.strictEqual(
       isMilestoneDepthVerifiedInSnapshot(snapshot, 'M001'),
@@ -130,7 +130,7 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
     // Now the dispatch rule fires (after session_switch cleared state)
     // and re-establishes the mark for the new session
     _setAutoActiveForTest(true);
-    markDepthVerified('M001'); // this is what the dispatch rule does
+    markDepthVerified('M001', process.cwd()); // this is what the dispatch rule does
 
     snapshot = loadWriteGateSnapshot(process.cwd());
     assert.strictEqual(
