@@ -43,6 +43,10 @@ const CONTRACT_SURFACES = [
     path: "src/web/bridge-service.ts",
   },
   {
+    surface: "webStore",
+    path: "web/lib/gsd-workspace-store.tsx",
+  },
+  {
     surface: "vscode",
     path: "vscode-extension/src/gsd-client.ts",
   },

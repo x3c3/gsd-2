@@ -102,7 +102,7 @@ test("collectBaseline returns the phase-zero report shape", async () => {
   assert.equal(report.distTest.exists, true);
   assert.equal(report.distTest.fileCount, 1);
   assert.equal(report.contracts.fixtures.total, 1);
-  assert.equal(report.metrics["contracts.fixtures.sharedBySurface"], 5);
+  assert.equal(report.metrics["contracts.fixtures.sharedBySurface"], 6);
   assert.equal(report.commands.length, 0);
   for (const metricName of BASELINE_REQUIRED_METRICS) {
     assert.equal(typeof report.metrics[metricName], "number", `${metricName} should be indexed as a number`);
@@ -150,7 +150,7 @@ test("collectContractsMetrics reports fixture coverage and surface drift", async
 
   assert.equal(metrics.fixtures.total, 1);
   assert.deepEqual(metrics.fixtures.files, ["src/tests/fixtures/contracts-golden-fixtures.ts"]);
-  assert.equal(metrics.fixtures.sharedBySurface, 5);
+  assert.equal(metrics.fixtures.sharedBySurface, 6);
   assert.equal(metrics.surfaceDriftFailures, 0);
   assert.equal(metrics.legacyTypeImportsRemaining, 0);
 });
@@ -273,6 +273,7 @@ async function writeContractsSurfaceFixtures(root: string): Promise<void> {
     "packages/rpc-client/src/rpc-types.ts",
     "packages/mcp-server/src/types.ts",
     "src/web/bridge-service.ts",
+    "web/lib/gsd-workspace-store.tsx",
     "vscode-extension/src/gsd-client.ts",
   ];
   for (const file of files) {
