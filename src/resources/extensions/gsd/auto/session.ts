@@ -22,6 +22,7 @@ import type { GitServiceImpl } from "../git-service.js";
 import type { CaptureEntry } from "../captures.js";
 import type { BudgetAlertLevel } from "../auto-budget.js";
 import { resolveWorktreeProjectRoot } from "../worktree-root.js";
+import { normalizeRealPath } from "../paths.js";
 import type { MilestoneScope } from "../workspace.js";
 
 // ─── Exported Types ──────────────────────────────────────────────────────────
@@ -233,6 +234,27 @@ export class AutoSession {
 
   get lockBasePath(): string {
     return resolveWorktreeProjectRoot(this.basePath, this.originalBasePath);
+  }
+
+  /**
+   * Canonical project root for state-derivation reads.
+   *
+   * Prefers the realpath-normalized projectRoot from the MilestoneScope
+   * (introduced by PR #5236), falling back to resolveWorktreeProjectRoot
+   * during early lifecycle / engine-bypass paths where scope may be null.
+   *
+   * Always realpath-normalized so that callers using this as a cache key
+   * (e.g. deriveState's _stateCache) cannot drift across worktree↔project-root
+   * path-string variants for the same filesystem location.
+   *
+   * Reader-only: do NOT use for write paths or unit-execution context — see
+   * Phase C of the coordination plan for write-side migration.
+   */
+  get canonicalProjectRoot(): string {
+    const root =
+      this.scope?.workspace.projectRoot
+        ?? resolveWorktreeProjectRoot(this.basePath, this.originalBasePath);
+    return normalizeRealPath(root);
   }
 
   reset(): void {
