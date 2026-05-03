@@ -1472,7 +1472,7 @@ export async function runUnitPhase(
   s.lastUnitAgentEndMessages = null;
   setCurrentPhase(unitType, {
     basePath: s.basePath,
-    traceId: `phase:${ic.flowId}`,
+    traceId: ic.flowId,
     turnId: `iter-${ic.iteration}`,
     causedBy: "unit-start",
   });

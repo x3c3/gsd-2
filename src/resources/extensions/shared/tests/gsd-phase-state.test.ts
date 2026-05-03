@@ -2,8 +2,12 @@
 
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	activateGSD,
+	configureGSDPhaseAudit,
 	deactivateGSD,
 	setCurrentPhase,
 	clearCurrentPhase,
@@ -52,5 +56,35 @@ describe("gsd-phase-state", () => {
 		deactivateGSD();
 		activateGSD();
 		assert.equal(getCurrentPhase(), null);
+	});
+
+	it("deactivation clears the audit context so later events do not carry stale trace data", () => {
+		const basePath = mkdtempSync(join(tmpdir(), "gsd-phase-state-audit-"));
+		try {
+			activateGSD({ basePath, traceId: "stale-trace", causedBy: "test" });
+			setCurrentPhase("plan-milestone");
+			deactivateGSD();
+
+			// Re-activate WITHOUT a context. If deactivate did not clear the
+			// stored context, this setCurrentPhase would emit an audit event
+			// using "stale-trace".
+			activateGSD();
+			setCurrentPhase("execute-task");
+
+			const eventsPath = join(basePath, ".gsd", "audit", "events.jsonl");
+			if (existsSync(eventsPath)) {
+				const contents = readFileSync(eventsPath, "utf-8");
+				assert.equal(
+					contents.includes("stale-trace") &&
+						contents.split("\n").filter((line) => line.includes("stale-trace") && line.includes("execute-task")).length > 0,
+					false,
+					"execute-task phase change must not be emitted under the deactivated trace",
+				);
+			}
+		} finally {
+			configureGSDPhaseAudit(null);
+			deactivateGSD();
+			rmSync(basePath, { recursive: true, force: true });
+		}
 	});
 });

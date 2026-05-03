@@ -63,3 +63,52 @@ test("uok turn observer adds writer sequence metadata to audit events", (t) => {
   assert.equal(payloads[1]?.writeSequence, 2);
   assert.equal(typeof payloads[0]?.writerTokenId, "string");
 });
+
+test("uok turn observer releases writer token when validation throws", (t) => {
+  const basePath = mkdtempSync(join(tmpdir(), "gsd-uok-loop-writer-throw-"));
+  resetWriterTokensForTests();
+  t.after(() => {
+    resetWriterTokensForTests();
+    rmSync(basePath, { recursive: true, force: true });
+  });
+
+  const observer = createTurnObserver({
+    basePath,
+    gitAction: "status-only",
+    gitPush: false,
+    enableAudit: false,
+    enableGitops: false,
+  });
+
+  observer.onTurnStart({
+    basePath,
+    traceId: "trace-throw",
+    turnId: "turn-throw",
+    iteration: 1,
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    startedAt: new Date().toISOString(),
+  });
+  assert.equal(hasActiveWriterToken(basePath, "turn-throw"), true);
+
+  // Invalid payload (missing required fields like status/finishedAt) should
+  // trigger validateTurnResult to fail and throw.
+  assert.throws(() => {
+    observer.onTurnResult({
+      traceId: "trace-throw",
+      turnId: "turn-throw",
+      // @ts-expect-error intentionally invalid for test
+      iteration: "not-a-number",
+      unitType: "execute-task",
+      unitId: "M001/S01/T01",
+      status: "completed",
+      failureClass: "none",
+      phaseResults: [],
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    });
+  }, /Invalid UOK turn result/);
+
+  // Cleanup must run in finally — token released, no leaked state.
+  assert.equal(hasActiveWriterToken(basePath, "turn-throw"), false);
+});

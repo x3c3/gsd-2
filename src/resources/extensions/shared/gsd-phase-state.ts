@@ -59,6 +59,7 @@ export function deactivateGSD(): void {
 	_active = false;
 	_currentPhase = null;
 	emitPhaseChange("deactivate", previousPhase, _currentPhase);
+	_auditContext = null;
 }
 
 /** Set the currently dispatched GSD phase (e.g. "plan-milestone"). */

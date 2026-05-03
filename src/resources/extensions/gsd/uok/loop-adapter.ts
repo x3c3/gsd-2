@@ -145,62 +145,68 @@ export function createTurnObserver(options: CreateTurnObserverOptions): UokTurnO
     },
 
     onTurnResult(result): void {
-      const merged: TurnResult = {
-        ...result,
-        version: CURRENT_UOK_CONTRACT_VERSION,
-        phaseResults: result.phaseResults.length > 0 ? result.phaseResults : [...phaseResults],
+      const cleanup = (): void => {
+        if (writerToken) {
+          releaseWriterToken(options.basePath, writerToken);
+        }
+        writerToken = null;
+        current = null;
+        phaseResults.length = 0;
       };
-      const validation = validateTurnResult(merged);
-      if (!validation.ok) {
-        throw new Error(`Invalid UOK turn result: ${validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
-      }
 
-      if (options.enableAudit) {
-        emitUokAuditEvent(
-          options.basePath,
-          buildAuditEnvelope({
-            traceId: validation.value.traceId,
-            turnId: validation.value.turnId,
-            category: "orchestration",
-            type: "turn-result",
-            payload: nextSequenceMetadata("audit", "append", {
-              contractVersion: validation.value.version,
-              unitType: validation.value.unitType,
-              unitId: validation.value.unitId,
-              status: validation.value.status,
-              failureClass: validation.value.failureClass,
-              error: validation.value.error,
-              phaseCount: validation.value.phaseResults.length,
-            }),
-          }),
-        );
-      }
-
-      if (options.enableGitops) {
-        const closeout: TurnCloseoutRecord = merged.closeout ?? {
-          traceId: merged.traceId,
-          turnId: merged.turnId,
-          unitType: merged.unitType,
-          unitId: merged.unitId,
-          status: merged.status,
-          failureClass: merged.failureClass,
-          gitAction: options.gitAction,
-          gitPushed: options.gitPush,
-          finishedAt: merged.finishedAt,
+      try {
+        const merged: TurnResult = {
+          ...result,
+          version: CURRENT_UOK_CONTRACT_VERSION,
+          phaseResults: result.phaseResults.length > 0 ? result.phaseResults : [...phaseResults],
         };
-        writeTurnCloseoutGitRecord(
-          options.basePath,
-          closeout,
-          nextSequenceMetadata("gitops", "update", { action: "record" }),
-        );
-      }
+        const validation = validateTurnResult(merged);
+        if (!validation.ok) {
+          throw new Error(`Invalid UOK turn result: ${validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
+        }
 
-      if (writerToken) {
-        releaseWriterToken(options.basePath, writerToken);
+        if (options.enableAudit) {
+          emitUokAuditEvent(
+            options.basePath,
+            buildAuditEnvelope({
+              traceId: validation.value.traceId,
+              turnId: validation.value.turnId,
+              category: "orchestration",
+              type: "turn-result",
+              payload: nextSequenceMetadata("audit", "append", {
+                contractVersion: validation.value.version,
+                unitType: validation.value.unitType,
+                unitId: validation.value.unitId,
+                status: validation.value.status,
+                failureClass: validation.value.failureClass,
+                error: validation.value.error,
+                phaseCount: validation.value.phaseResults.length,
+              }),
+            }),
+          );
+        }
+
+        if (options.enableGitops) {
+          const closeout: TurnCloseoutRecord = merged.closeout ?? {
+            traceId: merged.traceId,
+            turnId: merged.turnId,
+            unitType: merged.unitType,
+            unitId: merged.unitId,
+            status: merged.status,
+            failureClass: merged.failureClass,
+            gitAction: options.gitAction,
+            gitPushed: options.gitPush,
+            finishedAt: merged.finishedAt,
+          };
+          writeTurnCloseoutGitRecord(
+            options.basePath,
+            closeout,
+            nextSequenceMetadata("gitops", "update", { action: "record" }),
+          );
+        }
+      } finally {
+        cleanup();
       }
-      writerToken = null;
-      current = null;
-      phaseResults.length = 0;
     },
   };
 }
