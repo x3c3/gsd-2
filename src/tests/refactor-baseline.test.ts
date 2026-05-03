@@ -20,6 +20,7 @@ const {
   formatDelta,
   formatDeltaPercent,
   countMatches,
+  countLegacyContractImports,
   metricSafeLabel,
   parseArgs,
   parseCommandSpec,
@@ -204,6 +205,20 @@ test("metricSafeLabel normalizes arbitrary command labels", () => {
 test("countMatches counts non-overlapping pattern matches", () => {
   assert.equal(countMatches("one two one", /one/g), 2);
   assert.equal(countMatches("none", /missing/g), 0);
+});
+
+test("countLegacyContractImports ignores rpc-client implementation types", () => {
+  assert.equal(
+    countLegacyContractImports(`
+      import type { RpcClient } from "@gsd-build/rpc-client";
+      import type { SdkAgentEvent, RpcCostUpdateEvent } from "@gsd-build/rpc-client";
+    `),
+    2,
+  );
+  assert.equal(
+    countLegacyContractImports('import type { RpcClientOptions } from "@gsd-build/rpc-client";'),
+    0,
+  );
 });
 
 test("renderSummary includes key sections for human inspection", async () => {

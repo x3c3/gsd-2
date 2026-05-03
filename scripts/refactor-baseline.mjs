@@ -256,10 +256,7 @@ export async function collectContractsMetrics(root) {
       ...surface,
       exists: true,
       usesSharedContracts: content.includes("@gsd-build/contracts"),
-      legacyTypeImports: countMatches(
-        content,
-        /(?:packages\/pi-coding-agent\/src\/modes\/rpc\/rpc-types|src\/modes\/rpc\/rpc-types|from ["']@gsd-build\/rpc-client["'])/g,
-      ),
+      legacyTypeImports: countLegacyContractImports(content),
     });
   }
 
@@ -429,6 +426,22 @@ export function numberOrNull(value) {
 
 export function countMatches(value, pattern) {
   return Array.from(value.matchAll(pattern)).length;
+}
+
+export function countLegacyContractImports(value) {
+  let count = countMatches(
+    value,
+    /(?:packages\/pi-coding-agent\/src\/modes\/rpc\/rpc-types|src\/modes\/rpc\/rpc-types)/g,
+  );
+  const importPattern = /import\s+type\s+\{([^}]+)\}\s+from\s+["']@gsd-build\/rpc-client["']/g;
+  for (const match of value.matchAll(importPattern)) {
+    const names = match[1]
+      .split(",")
+      .map(name => name.trim().split(/\s+as\s+/)[0]?.trim())
+      .filter(Boolean);
+    count += names.filter(name => !["RpcClient", "RpcClientOptions", "RpcEventListener"].includes(name)).length;
+  }
+  return count;
 }
 
 export function metricSafeLabel(label) {

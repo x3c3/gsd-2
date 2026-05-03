@@ -244,6 +244,12 @@ export interface RpcCostUpdateEvent {
 
 export type RpcV2Event = RpcExecutionCompleteEvent | RpcCostUpdateEvent;
 
+/** Agent event — a loosely typed record from the RPC event stream. */
+export interface SdkAgentEvent {
+	type: string;
+	[key: string]: unknown;
+}
+
 export type RpcExtensionUIRequest =
 	| { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[]; timeout?: number; allowMultiple?: boolean }
 	| { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string; timeout?: number }
