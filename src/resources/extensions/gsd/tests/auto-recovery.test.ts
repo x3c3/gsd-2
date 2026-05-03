@@ -90,6 +90,46 @@ test("resolveExpectedArtifactPath returns correct path for plan-slice", () => {
   }
 });
 
+test("plan-slice artifact resolution handles lowercase unit IDs against uppercase paths", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "- [ ] **T01: Implement feature** `est:1h`",
+    ].join("\n"));
+    writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan");
+
+    const artifactPath = resolveExpectedArtifactPath("plan-slice", "m001/s01", base);
+    assert.ok(
+      artifactPath?.endsWith(".gsd/milestones/M001/slices/S01/S01-PLAN.md"),
+      "lowercase unit IDs should resolve to the existing uppercase artifact path",
+    );
+
+    const diagnostic = diagnoseExpectedArtifact("plan-slice", "m001/s01", base);
+    assert.ok(
+      diagnostic?.includes(".gsd/milestones/M001/slices/S01/S01-PLAN.md"),
+      "diagnostic should report the existing uppercase artifact path",
+    );
+    assert.ok(
+      diagnostic?.includes("task plans"),
+      "diagnostic should mention task plans because slice plan alone is insufficient",
+    );
+
+    assert.equal(
+      verifyExpectedArtifact("plan-slice", "m001/s01", base),
+      true,
+      "verification should pass when the uppercase slice plan and task plans exist",
+    );
+  } finally {
+    cleanup(base);
+  }
+});
+
 test("resolveExpectedArtifactPath returns null for unknown type", () => {
   const base = makeTmpBase();
   try {
