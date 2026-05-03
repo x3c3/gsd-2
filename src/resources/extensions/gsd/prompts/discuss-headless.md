@@ -31,32 +31,25 @@ Decide the approach based on the actual scope:
 
 ## Mandatory Investigation
 
-Do a mandatory investigation pass before making any decisions. This is not optional.
+Investigate before making decisions:
 
-1. **Scout the codebase** — `ls`, `find`, `rg`, or `scout` for broad unfamiliar areas. Understand what already exists, what patterns are established, what constraints current code imposes.
-2. **Check library docs** — `resolve_library` / `get_library_docs` for any tech mentioned in the spec. Get current facts about capabilities, constraints, API shapes, version-specific behavior.
-3. **Web search** — `search-the-web` if the domain is unfamiliar, if you need current best practices, or if the spec references external services/APIs you need facts about. Use `fetch_page` for full content when snippets aren't enough.
+1. Scout the codebase with `ls`, `find`, `rg`, or `scout` for relevant areas, patterns, and constraints.
+2. Check current library docs with `resolve_library` / `get_library_docs` for mentioned tech.
+3. Use `search-the-web`, `fetch_page`, or `search_and_read` only when the domain, service, API, or current practice needs external facts.
 
-**Web search budget:** Budget carefully across investigation + focused research:
-- Prefer `resolve_library` / `get_library_docs` over `search-the-web` for library documentation.
-- Prefer `search_and_read` for one-shot topic research.
-- Target 2-3 web searches in this investigation pass. Save remaining budget for focused research.
-- Do NOT repeat the same or similar queries.
-
-The goal: your decisions should reflect what's actually true in the codebase and ecosystem, not what you assume.
+Budget searches across investigation and focused research. Prefer library docs and one-shot `search_and_read`; avoid repeated similar queries. Decisions must reflect codebase and ecosystem evidence, not assumptions.
 
 ## Autonomous Decision-Making
 
 For every area where the spec is ambiguous, vague, or silent:
 
-- Apply the depth checklist (below) to identify what needs resolution
-- Make your best-judgment call based on: the spec's intent, codebase patterns, domain conventions, and investigation findings
-- **Document every assumption** in the Context file under an "Assumptions" section
-- For each assumption, note: what the spec said (or didn't say), what you decided, and why
+- Apply the depth checklist below.
+- Make the smallest sound judgment call from the spec intent, codebase patterns, domain conventions, and investigation findings.
+- Document every assumption in CONTEXT.md under "Assumptions": what the spec said or omitted, what you decided, and why.
 
 ### Depth Checklist
 
-Ensure ALL of these are resolved before writing artifacts — from the spec + investigation, not by asking:
+Resolve all of these from the spec and investigation before writing artifacts:
 
 - [ ] **What is being built** — concrete enough that you could explain it to a stranger
 - [ ] **Why it needs to exist** — the problem it solves or the desire it fulfills
@@ -75,7 +68,7 @@ Print a structured depth summary in chat covering:
 - Assumptions you made and why
 - Areas where you're least confident
 
-This is your audit trail. Print it — do not skip it.
+This is the audit trail. Print it.
 
 ## Focused Research
 
@@ -90,7 +83,7 @@ Research is advisory, not auto-binding. Use the spec + investigation to identify
 
 For multi-milestone visions, research should cover the full landscape, not just the first milestone. Research findings may affect milestone sequencing, not just slice ordering within M001.
 
-**Key difference from interactive flow:** Where the interactive flow would present research-surfaced candidate requirements for the user to confirm/defer/reject, you instead apply your best judgment. If a research finding clearly aligns with the spec's intent, include it. If it's tangential or would expand scope beyond what the spec describes, defer it or mark it out of scope. Document the reasoning.
+Headless difference: apply judgment instead of asking for confirmation. Include research findings that clearly align with the spec; defer or mark out of scope findings that are tangential or expand scope. Document the reasoning.
 
 ## Capability Contract
 
@@ -124,7 +117,7 @@ Rules:
 - Product-facing work should capture launchability, primary user loop, continuity, and failure visibility when relevant
 - Later milestones may have provisional ownership, but the first planned milestone should map requirements to concrete slices wherever possible
 
-For multi-milestone projects, requirements should span the full vision. Requirements owned by later milestones get provisional ownership. The full requirement set captures the spec's complete vision — milestones are the sequencing strategy, not the scope boundary.
+For multi-milestone projects, requirements span the full vision. Later milestones get provisional ownership; milestones sequence scope, they do not shrink it.
 
 **Print the requirements in chat before writing the roadmap.** Print a markdown table with columns: ID, Title, Status, Owner, Source. Group by status (Active, Deferred, Out of Scope).
 
@@ -155,7 +148,7 @@ In a single pass:
 3. Write or update `.gsd/REQUIREMENTS.md` — use the **Requirements** output template below. Confirm requirement states, ownership, and traceability before roadmap creation.
 
 **Depth-Preservation Guidance for context.md:**
-Preserve the specification's exact terminology, emphasis, and specific framing. Do not paraphrase domain-specific language into generics. If the spec said "craft feel," write "craft feel" — not "high-quality user experience." The context file is downstream agents' only window into this conversation — flattening specifics into generics loses the signal that shaped every decision.
+Preserve the specification's exact terminology, emphasis, and framing. Do not flatten domain-specific language into generics. CONTEXT.md is downstream agents' only window into this spec.
 
 4. Write `{{contextPath}}` — use the **Context** output template below. Preserve key risks, unknowns, existing codebase constraints, integration points, and relevant requirements surfaced during research. Include an "Assumptions" section documenting every judgment call.
 5. Call `gsd_plan_milestone` to create the roadmap. Decompose into demoable vertical slices with risk, depends, demo sentences, proof strategy, verification classes, milestone definition of done, requirement coverage, and a boundary map. If the milestone crosses multiple runtime boundaries, include an explicit final integration slice that proves the assembled system works end-to-end in a real environment. Use the **Roadmap** output template below to structure the tool call parameters.
@@ -220,7 +213,7 @@ For each remaining milestone, in dependency order, autonomously decide the best 
 2. Check for stale assumptions — verify referenced modules still work as described.
 3. Print findings in chat before writing each milestone's CONTEXT.md.
 
-Each context file (full or draft) should be rich enough that a future agent encountering it fresh — with no memory of this conversation — can understand the intent, constraints, dependencies, what this milestone unlocks, and what "done" looks like.
+Each full or draft context must let a future agent understand intent, constraints, dependencies, unlocks, and done criteria without this session.
 
 #### Milestone Gate Tracking (MANDATORY for multi-milestone)
 
