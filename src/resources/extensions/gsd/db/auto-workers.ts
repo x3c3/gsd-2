@@ -189,3 +189,34 @@ export function getAutoWorker(workerId: string): AutoWorkerRow | null {
 export function autoWorkerHeartbeatTtlSeconds(): number {
   return HEARTBEAT_TTL_SECONDS;
 }
+
+/**
+ * Phase C pt 2 — find the most recently active worker for a project root
+ * whose heartbeat has lapsed (the "previous crashed session" indicator).
+ *
+ * Used by crash-recovery.ts:readCrashLock to detect when a prior auto-mode
+ * session ended without cleanup. Callers should additionally PID-check the
+ * returned row via isLockProcessAlive() to distinguish "really dead" from
+ * "still alive but heartbeat behind" (rare, but possible under load).
+ *
+ * Returns null if no stale worker exists for this project root.
+ */
+export function findStaleWorkerForProject(
+  projectRootRealpath: string,
+): AutoWorkerRow | null {
+  if (!isDbAvailable()) return null;
+  const db = _getAdapter()!;
+  const cutoffMs = Date.now() - HEARTBEAT_TTL_SECONDS * 1000;
+  const cutoffIso = new Date(cutoffMs).toISOString();
+  const row = db.prepare(
+    `SELECT worker_id, host, pid, started_at, version,
+            last_heartbeat_at, status, project_root_realpath
+     FROM workers
+     WHERE project_root_realpath = :project_root
+       AND status = 'active'
+       AND last_heartbeat_at < :cutoff
+     ORDER BY started_at DESC
+     LIMIT 1`,
+  ).get({ ":project_root": projectRootRealpath, ":cutoff": cutoffIso }) as AutoWorkerRow | undefined;
+  return row ?? null;
+}
