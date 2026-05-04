@@ -11,6 +11,36 @@
 
 import { buildPrEvidence } from "../gsd/pr-evidence.js";
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Wrap a string in a CommonMark inline-code span, escaping any embedded
+ * backticks by selecting a fence longer than the longest backtick run inside
+ * the input. If the input begins or ends with a backtick, pad with a single
+ * space inside the fence (CommonMark requirement).
+ *
+ * Empty input returns an empty string (no fence) — there is nothing to render
+ * as code, and emitting an empty pair of backticks would produce literal
+ * backticks in GitHub-flavored markdown.
+ */
+export function inlineCode(s: string): string {
+  if (s.length === 0) return "";
+  let longestRun = 0;
+  let currentRun = 0;
+  for (const ch of s) {
+    if (ch === "`") {
+      currentRun++;
+      if (currentRun > longestRun) longestRun = currentRun;
+    } else {
+      currentRun = 0;
+    }
+  }
+  const fence = "`".repeat(longestRun + 1);
+  const needsPad = s.startsWith("`") || s.endsWith("`");
+  const pad = needsPad ? " " : "";
+  return `${fence}${pad}${s}${pad}${fence}`;
+}
+
 // ─── Milestone Issue Body ───────────────────────────────────────────────────
 
 export interface MilestoneData {
@@ -124,7 +154,7 @@ export function formatTaskIssueBody(data: TaskData): string {
   if (data.files?.length) {
     lines.push("### Files");
     for (const file of data.files) {
-      lines.push(`- \`${file}\``);
+      lines.push(`- ${inlineCode(file)}`);
     }
     lines.push("");
   }
@@ -227,10 +257,10 @@ export function formatSwarmLanePRBody(data: SwarmLanePRData): string {
   const summaries = [
     [
       "### Swarm lane",
-      `**Lane:** \`${laneLabel}\``,
-      `**Branch:** \`${data.lane.branch}\``,
+      `**Lane:** ${inlineCode(laneLabel)}`,
+      `**Branch:** ${inlineCode(data.lane.branch)}`,
       data.lane.owner ? `**Owner:** ${data.lane.owner}` : "",
-      data.lane.latestCommit ? `**Latest commit:** \`${data.lane.latestCommit}\`` : "",
+      data.lane.latestCommit ? `**Latest commit:** ${inlineCode(data.lane.latestCommit)}` : "",
     ].filter(Boolean).join("\n"),
     `### Impact area\n${data.impactArea}`,
     `### Changed contracts\n${checkedList(data.lane.changedContracts, "No shared contracts changed").join("\n")}`,
@@ -257,7 +287,7 @@ export function formatSwarmReleaseChecklistBody(data: SwarmReleaseChecklistData)
 
   lines.push(`# UOK Swarm Release Checklist`);
   lines.push("");
-  lines.push(`**Integration branch:** \`${data.integrationBranch}\``);
+  lines.push(`**Integration branch:** ${inlineCode(data.integrationBranch)}`);
   lines.push("");
 
   lines.push("## Lane summary");
@@ -266,9 +296,9 @@ export function formatSwarmReleaseChecklistBody(data: SwarmReleaseChecklistData)
   lines.push("|------|--------|-------|--------|--------|");
   for (const lane of data.lanes) {
     const owner = lane.owner ?? "";
-    const commit = lane.latestCommit ? `\`${lane.latestCommit}\`` : "";
+    const commit = lane.latestCommit ? inlineCode(lane.latestCommit) : "";
     const status = lane.blockers?.length ? "blocked" : "ready";
-    lines.push(`| \`${SWARM_LANE_LABELS[lane.id]}\` | \`${lane.branch}\` | ${owner} | ${commit} | ${status} |`);
+    lines.push(`| ${inlineCode(SWARM_LANE_LABELS[lane.id])} | ${inlineCode(lane.branch)} | ${owner} | ${commit} | ${status} |`);
   }
   lines.push("");
 
