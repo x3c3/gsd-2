@@ -110,6 +110,12 @@ export class CustomWorkflowEngine implements WorkflowEngine {
       let next = getNextPendingStep(graph);
 
       if (!next) {
+        const allDone = graph.steps.every(
+          (step) => step.status === "complete" || step.status === "expanded",
+        );
+        if (!allDone) {
+          return { action: "skip" };
+        }
         return {
           action: "stop",
           reason: "All steps complete",

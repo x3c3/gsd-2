@@ -113,7 +113,7 @@ const CONTEXT_MODE_LANE_LABELS: Record<Exclude<ContextModePolicy, "none">, strin
 };
 
 const CONTEXT_MODE_GUIDANCE =
-  "Use `gsd_exec` for noisy scans, builds, and tests so full output stays out of prompt context; call `gsd_exec_search` before repeating prior runs; call `gsd_resume` after compaction or resume to recover stored execution context.";
+  "Use `gsd_exec` for noisy commands, `gsd_exec_search` before reruns, and `gsd_resume` after compaction or resume.";
 
 /**
  * Render the Context Mode instruction lane for a unit type. Unknown unit

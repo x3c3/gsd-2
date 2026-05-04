@@ -275,6 +275,171 @@ export async function inlineFileSmart(
   return `### ${label}\nSource: \`${relPath}\`\n\n${truncated}`;
 }
 
+function inlineCompactTemplate(name: "plan" | "task-summary" | "slice-summary", label: string): string {
+  const compact: Record<typeof name, string> = {
+    plan: [
+      "# {{sliceId}}: {{sliceTitle}}",
+      "",
+      "**Goal:** {{goal}}",
+      "**Demo:** {{demo}}",
+      "",
+      "## Must-Haves",
+      "- {{mustHave}}",
+      "",
+      "## Threat Surface",
+      "- Abuse: {{abuseScenarios}}",
+      "- Data exposure: {{sensitiveDataAccessible}}",
+      "- Input trust: {{untrustedInput}}",
+      "",
+      "## Requirement Impact",
+      "- Requirements touched: {{requirementIds}}",
+      "- Re-verify: {{whatMustBeRetested}}",
+      "- Decisions revisited: {{decisionIds}}",
+      "",
+      "## Proof Level",
+      "- This slice proves: {{contract | integration | operational | final-assembly}}",
+      "- Real runtime required: {{yes/no}}",
+      "- Human/UAT required: {{yes/no}}",
+      "",
+      "## Verification",
+      "- {{testFileOrCommand}}",
+      "",
+      "## Observability / Diagnostics",
+      "- Runtime signals: {{signalOrNone}}",
+      "- Inspection surfaces: {{surfaceOrNone}}",
+      "- Failure visibility: {{failureSignalOrNone}}",
+      "- Redaction constraints: {{secretOrPiiBoundaryOrNone}}",
+      "",
+      "## Integration Closure",
+      "- Upstream surfaces consumed: {{filesModulesContracts}}",
+      "- New wiring introduced: {{entrypointOrNone}}",
+      "- Remaining end-to-end work: {{listOrNothing}}",
+      "",
+      "## Tasks",
+      "- [ ] **T01: {{taskTitle}}** `est:{{estimate}}`",
+      "  - Why: {{whyThisTaskExists}}",
+      "  - Files: `{{filePath}}`",
+      "  - Do: {{specificImplementationStepsAndConstraints}}",
+      "  - Verify: {{testCommandOrRuntimeCheck}}",
+      "  - Done when: {{measurableAcceptanceCondition}}",
+      "",
+      "## Files Likely Touched",
+      "- `{{filePath}}`",
+    ].join("\n"),
+    "task-summary": [
+      "---",
+      "id: {{taskId}}",
+      "parent: {{sliceId}}",
+      "milestone: {{milestoneId}}",
+      "provides: [{{whatThisTaskProvides}}]",
+      "key_files: [{{filePath}}]",
+      "key_decisions: [{{decision}}]",
+      "patterns_established: [{{pattern}}]",
+      "observability_surfaces: [{{diagnosticOrNone}}]",
+      "duration: {{duration}}",
+      "verification_result: passed",
+      "completed_at: {{date}}",
+      "blocker_discovered: false",
+      "---",
+      "",
+      "# {{taskId}}: {{taskTitle}}",
+      "**{{oneLiner}}**",
+      "",
+      "## What Happened",
+      "{{narrative}}",
+      "",
+      "## Verification",
+      "{{whatWasVerifiedAndHow}}",
+      "",
+      "## Verification Evidence",
+      "| # | Command | Exit Code | Verdict | Duration |",
+      "|---|---------|-----------|---------|----------|",
+      "| {{row}} | {{command}} | {{exitCode}} | {{verdict}} | {{duration}} |",
+      "",
+      "## Diagnostics",
+      "{{diagnosticsOrNone}}",
+      "",
+      "## Deviations",
+      "{{deviationsFromPlan_OR_none}}",
+      "",
+      "## Known Issues",
+      "{{issuesDiscoveredButNotFixed_OR_none}}",
+      "",
+      "## Files Created/Modified",
+      "- `{{filePath}}` - {{description}}",
+    ].join("\n"),
+    "slice-summary": [
+      "---",
+      "id: {{sliceId}}",
+      "parent: {{milestoneId}}",
+      "milestone: {{milestoneId}}",
+      "provides: [{{whatThisSliceProvides}}]",
+      "requires: []",
+      "affects: []",
+      "key_files: [{{filePath}}]",
+      "key_decisions: [{{decision}}]",
+      "patterns_established: [{{pattern}}]",
+      "observability_surfaces: [{{diagnosticOrNone}}]",
+      "drill_down_paths: [{{pathToTaskSummary}}]",
+      "duration: {{duration}}",
+      "verification_result: passed",
+      "completed_at: {{date}}",
+      "---",
+      "",
+      "# {{sliceId}}: {{sliceTitle}}",
+      "**{{oneLiner}}**",
+      "",
+      "## What Happened",
+      "{{narrative}}",
+      "",
+      "## Verification",
+      "{{whatWasVerifiedAcrossAllTasks}}",
+      "",
+      "## Requirements Advanced",
+      "- {{requirementId}} - {{howThisSliceAdvancedIt}}",
+      "",
+      "## Requirements Validated",
+      "- {{requirementId}} - {{whatProofNowMakesItValidated}}",
+      "",
+      "## New Requirements Surfaced",
+      "- {{newRequirementOr_none}}",
+      "",
+      "## Requirements Invalidated or Re-scoped",
+      "- {{requirementIdOr_none}} - {{whatChanged}}",
+      "",
+      "## Operational Readiness",
+      "- Health signal: {{healthSignalOrNA}}",
+      "- Failure signal: {{failureSignalOrNA}}",
+      "- Recovery: {{recoveryOrNA}}",
+      "- Monitoring gaps: {{gapsOrNone}}",
+      "",
+      "## Deviations",
+      "{{deviationsFromPlan_OR_none}}",
+      "",
+      "## Known Limitations",
+      "{{whatDoesntWorkYet_OR_whatWasDeferredToLaterSlices}}",
+      "",
+      "## Follow-ups",
+      "{{workDeferredOrDiscoveredDuringExecution_OR_none}}",
+      "",
+      "## Files Created/Modified",
+      "- `{{filePath}}` - {{description}}",
+      "",
+      "## Forward Intelligence",
+      "### What the next slice should know",
+      "- {{insightThatWouldHelpDownstreamWork}}",
+      "### What's fragile",
+      "- {{fragileAreaOrThinImplementation}} - {{whyItMatters}}",
+      "### Authoritative diagnostics",
+      "- {{whereAFutureAgentShouldLookFirst}} - {{whyThisSignalIsTrustworthy}}",
+      "### What assumptions changed",
+      "- {{originalAssumption}} - {{whatActuallyHappened}}",
+    ].join("\n"),
+  };
+
+  return `${compact[name]}\n\n### Output Template: ${label}\nSource: \`templates/${name}.md\``;
+}
+
 /**
  * Compact slice-summary excerpt for milestone-level closers (#4780).
  *
@@ -1717,7 +1882,7 @@ async function renderSlicePrompt(options: {
   const graphBlock = await inlineGraphSubgraph(base, `${sid} ${sTitle}`, { budget: 3000 });
   if (graphBlock) inlined.push(graphBlock);
 
-  inlined.push(inlineTemplate("plan", "Slice Plan"));
+  inlined.push(level === "minimal" ? inlineCompactTemplate("plan", "Slice Plan") : inlineTemplate("plan", "Slice Plan"));
   if (level === "full") {
     inlined.push(inlineTemplate("task-plan", "Task Plan"));
   }
@@ -1945,7 +2110,7 @@ export async function buildExecuteTaskPrompt(
   const graphBlockET = await inlineGraphSubgraph(base, `${tid} ${tTitle}`, { budget: 2000 });
 
   const inlinedTemplates = inlineLevel === "minimal"
-    ? inlineTemplate("task-summary", "Task Summary")
+    ? inlineCompactTemplate("task-summary", "Task Summary")
     : [
         inlineTemplate("task-summary", "Task Summary"),
         inlineTemplate("decisions", "Decisions"),
@@ -2091,7 +2256,9 @@ export async function buildCompleteSlicePrompt(
         return blocks.length > 0 ? blocks.join("\n\n---\n\n") : null;
       }
       case "templates": {
-        const parts = [inlineTemplate("slice-summary", "Slice Summary")];
+        const parts = [inlineLevel === "minimal"
+          ? inlineCompactTemplate("slice-summary", "Slice Summary")
+          : inlineTemplate("slice-summary", "Slice Summary")];
         if (inlineLevel !== "minimal") {
           parts.push(inlineTemplate("uat", "UAT"));
         }

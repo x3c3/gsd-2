@@ -372,6 +372,44 @@ describe("Custom engine loop integration", () => {
     assert.ok(stopEntry?.includes("Workflow complete"), "Should stop with 'Workflow complete'");
   });
 
+  it("finishes custom-engine skip turns and clears current turn state", async () => {
+    _resetPendingResolve();
+
+    const runDir = makeTmpDir();
+    const graph = makeGraph([
+      makeStep({ id: "step-a", dependsOn: ["step-b"] }),
+      makeStep({ id: "step-b", dependsOn: ["step-a"] }),
+    ], "blocked-workflow");
+    writeGraph(runDir, graph);
+    writeDefinition(runDir, graph.steps, "blocked-workflow");
+
+    const ctx = makeMockCtx();
+    const pi = makeMockPi();
+    const s = makeLoopSession({
+      activeEngineId: "custom",
+      activeRunDir: runDir,
+      basePath: runDir,
+    });
+    const turnResults: Array<{ status: string }> = [];
+    const deps = makeMockDeps({
+      uokObserver: {
+        onTurnStart: () => {},
+        onTurnResult: (result) => {
+          turnResults.push({ status: result.status });
+          s.active = false;
+        },
+        onPhaseResult: () => {},
+      },
+    });
+
+    await autoLoop(ctx, pi, s, deps);
+
+    assert.deepEqual(turnResults, [{ status: "skipped" }]);
+    assert.equal(s.currentTraceId, null);
+    assert.equal(s.currentTurnId, null);
+    assert.equal(pi.calls.length, 0, "skip should not dispatch a custom step");
+  });
+
   it("does not call runPreDispatch or runFinalize on the custom path", async () => {
     _resetPendingResolve();
 

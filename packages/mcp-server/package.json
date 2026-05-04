@@ -34,8 +34,9 @@
     "test": "npm run build:test && node --test dist/mcp-server.test.js dist/remote-questions.test.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@gsd-build/contracts": "^2.80.0",
     "@gsd-build/rpc-client": "^2.80.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {

@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import { WORKFLOW_TOOL_NAMES as CONTRACT_WORKFLOW_TOOL_NAMES } from "@gsd-build/contracts";
 
 import { logAliasUsage } from "./alias-telemetry.js";
 
@@ -662,46 +663,7 @@ interface McpToolServer {
   ): unknown;
 }
 
-export const WORKFLOW_TOOL_NAMES = [
-  "gsd_decision_save",
-  "gsd_save_decision",
-  "gsd_requirement_update",
-  "gsd_update_requirement",
-  "gsd_requirement_save",
-  "gsd_save_requirement",
-  "gsd_milestone_generate_id",
-  "gsd_generate_milestone_id",
-  "gsd_plan_milestone",
-  "gsd_plan_slice",
-  "gsd_plan_task",
-  "gsd_task_plan",
-  "gsd_replan_slice",
-  "gsd_slice_replan",
-  "gsd_slice_complete",
-  "gsd_complete_slice",
-  "gsd_skip_slice",
-  "gsd_complete_milestone",
-  "gsd_milestone_complete",
-  "gsd_validate_milestone",
-  "gsd_milestone_validate",
-  "gsd_reassess_roadmap",
-  "gsd_roadmap_reassess",
-  "gsd_save_gate_result",
-  "gsd_summary_save",
-  "gsd_task_complete",
-  "gsd_complete_task",
-  "gsd_milestone_status",
-  "gsd_journal_query",
-  "gsd_exec",
-  "gsd_exec_search",
-  "gsd_resume",
-  // ADR-013 step 3: memory-store tools exposed to external MCP clients.
-  // gsd_memory_graph is namespaced to avoid collision with the existing
-  // gsd_graph tool (project knowledge graph from .gsd/ artifacts).
-  "gsd_capture_thought",
-  "gsd_memory_query",
-  "gsd_memory_graph",
-] as const;
+export const WORKFLOW_TOOL_NAMES = CONTRACT_WORKFLOW_TOOL_NAMES;
 
 const DEFAULT_WORKFLOW_OP_TIMEOUT_MS = 5 * 60 * 1000;
 

@@ -1,5 +1,17 @@
+// Project/App: GSD-2
+// File Purpose: VS Code sidebar webview provider for GSD agent controls and status.
+
 import * as vscode from "vscode";
 import type { GsdClient, SessionStats, ThinkingLevel } from "./gsd-client.js";
+import {
+	getSessionCacheReadTokens,
+	getSessionCacheWriteTokens,
+	getSessionCost,
+	getSessionInputTokens,
+	getSessionOutputTokens,
+	getSessionTotalTokens,
+	hasSessionTokenStats,
+} from "./rpc-display.js";
 
 /**
  * Send a message through VS Code's Chat panel so the user sees the response.
@@ -287,20 +299,18 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 		const sessionDisplay = info.sessionName || (info.sessionId !== "N/A" ? info.sessionId.slice(0, 8) : "N/A");
 
 		// Cost for header
-		const costDisplay = info.stats?.totalCost !== undefined && info.stats.totalCost > 0
-			? `$${info.stats.totalCost.toFixed(4)}`
+		const cost = getSessionCost(info.stats);
+		const costDisplay = cost > 0
+			? `$${cost.toFixed(4)}`
 			: "";
 
 		// Context window
-		const totalTokens = (info.stats?.inputTokens ?? 0) + (info.stats?.outputTokens ?? 0);
+		const totalTokens = getSessionTotalTokens(info.stats);
 		const contextPct = info.contextWindow > 0 ? Math.min(100, Math.round((totalTokens / info.contextWindow) * 100)) : 0;
 		const contextColor = contextPct > 80 ? "#f44747" : contextPct > 50 ? "#cca700" : "#4ec9b0";
 
 		// Only show stats that have real data
-		const hasStats = info.stats && (
-			(info.stats.inputTokens !== undefined && info.stats.inputTokens > 0) ||
-			(info.stats.outputTokens !== undefined && info.stats.outputTokens > 0)
-		);
+		const hasStats = hasSessionTokenStats(info.stats);
 
 		const nonce = getNonce();
 
@@ -308,13 +318,13 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 		let statRows = "";
 		if (hasStats && info.stats) {
 			const pairs: [string, string][] = [];
-			if (info.stats.inputTokens) pairs.push(["In", formatNum(info.stats.inputTokens)]);
-			if (info.stats.outputTokens) pairs.push(["Out", formatNum(info.stats.outputTokens)]);
-			if (info.stats.cacheReadTokens) pairs.push(["Cache R", formatNum(info.stats.cacheReadTokens)]);
-			if (info.stats.cacheWriteTokens) pairs.push(["Cache W", formatNum(info.stats.cacheWriteTokens)]);
-			if (info.stats.turnCount) pairs.push(["Turns", String(info.stats.turnCount)]);
-			if (info.stats.duration) pairs.push(["Time", `${Math.round(info.stats.duration / 1000)}s`]);
-			if (info.stats.totalCost !== undefined && info.stats.totalCost > 0) pairs.push(["Cost", `$${info.stats.totalCost.toFixed(4)}`]);
+			if (getSessionInputTokens(info.stats)) pairs.push(["In", formatNum(getSessionInputTokens(info.stats))]);
+			if (getSessionOutputTokens(info.stats)) pairs.push(["Out", formatNum(getSessionOutputTokens(info.stats))]);
+			if (getSessionCacheReadTokens(info.stats)) pairs.push(["Cache R", formatNum(getSessionCacheReadTokens(info.stats))]);
+			if (getSessionCacheWriteTokens(info.stats)) pairs.push(["Cache W", formatNum(getSessionCacheWriteTokens(info.stats))]);
+			if (info.stats.totalMessages) pairs.push(["Messages", String(info.stats.totalMessages)]);
+			if (info.stats.toolCalls) pairs.push(["Tools", String(info.stats.toolCalls)]);
+			if (getSessionCost(info.stats) > 0) pairs.push(["Cost", `$${getSessionCost(info.stats).toFixed(4)}`]);
 
 			statRows = pairs.map(([k, v]) =>
 				`<span class="stat-label">${k}</span><span class="stat-value">${v}</span>`
@@ -717,7 +727,7 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 			<div class="context-track">
 				<div class="context-fill" style="width:${ui.contextPct}%;background:${ui.contextColor}"></div>
 			</div>
-			<div class="context-text">${ui.contextPct}% context (${formatNum((info.stats?.inputTokens ?? 0) + (info.stats?.outputTokens ?? 0))} / ${formatNum(info.contextWindow)})</div>
+			<div class="context-text">${ui.contextPct}% context (${formatNum(getSessionTotalTokens(info.stats))} / ${formatNum(info.contextWindow)})</div>
 		</div>
 		` : ""}
 	</div>

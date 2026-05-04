@@ -879,6 +879,44 @@ test("autoLoop passes structured session-lock failure details to the handler", a
   );
 });
 
+test("autoLoop keeps queued sidecar work when the session lock is lost", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  const pi = makeMockPi();
+  const s = makeLoopSession();
+  s.sidecarQueue.push({
+    kind: "hook" as const,
+    unitType: "hook/review",
+    unitId: "M001/S01/T01/review",
+    prompt: "review the code",
+  });
+
+  const journalEvents: string[] = [];
+  const deps = makeMockDeps({
+    validateSessionLock: () =>
+      ({
+        valid: false,
+        failureReason: "compromised",
+        expectedPid: process.pid,
+      }) as SessionLockStatus,
+    handleLostSessionLock: () => {
+      deps.callLog.push("handleLostSessionLock");
+    },
+    emitJournalEvent: (entry) => {
+      journalEvents.push(entry.eventType);
+    },
+  });
+
+  await autoLoop(ctx, pi, s, deps);
+
+  assert.equal(s.sidecarQueue.length, 1, "lost session lock must not consume queued sidecar work");
+  assert.equal(s.sidecarQueue[0]?.unitId, "M001/S01/T01/review");
+  assert.ok(!journalEvents.includes("sidecar-dequeue"), "sidecar dequeue must happen only after lock validation");
+  assert.ok(!deps.callLog.includes("deriveState"), "lock loss should stop before deriving state");
+});
+
 test("autoLoop exits on terminal blocked state", async (t) => {
   _resetPendingResolve();
 

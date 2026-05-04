@@ -1,3 +1,5 @@
+// Project/App: GSD-2
+// File Purpose: Runtime state derivation from GSD workflow database and legacy files.
 // GSD Extension — State Derivation
 // DB-authoritative runtime derivation with explicit legacy filesystem fallback.
 // Pure TypeScript, zero Pi dependencies.
@@ -46,6 +48,7 @@ import { logWarning } from './workflow-logger.js';
 import { extractVerdict } from './verdict-parser.js';
 import { detectPendingEscalation } from './escalation.js';
 import { isTerminalMilestoneSummaryContent } from './milestone-summary-classifier.js';
+import { incrementLegacyTelemetry } from './legacy-telemetry.js';
 
 import {
   isDbAvailable,
@@ -59,10 +62,9 @@ import {
   getRequirementCounts,
   getLatestAssessmentByScope,
   getPendingGateCountForTurn,
-  type MilestoneRow,
-  type SliceRow,
-  type TaskRow,
 } from './gsd-db.js';
+import type { MilestoneRow } from './db-milestone-artifact-rows.js';
+import type { SliceRow, TaskRow } from './db-task-slice-rows.js';
 
 /**
  * A "ghost" milestone directory contains only META.json (and no substantive
@@ -331,6 +333,7 @@ export async function deriveState(
     }
     result = await _deriveStateImpl(basePath, opts);
     _telemetry.markdownDeriveCount++;
+    incrementLegacyTelemetry("legacy.markdownFallbackUsed");
   } else {
     if (wasDbOpenAttempted()) {
       logWarning("state", "DB unavailable — refusing implicit markdown state derivation");

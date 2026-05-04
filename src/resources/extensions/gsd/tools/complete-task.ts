@@ -1,3 +1,6 @@
+// Project/App: GSD-2
+// File Purpose: Complete-task tool handler for GSD workflow state and summaries.
+
 /**
  * complete-task handler — the core operation behind gsd_complete_task.
  *
@@ -55,7 +58,7 @@ export interface CompleteTaskResult {
   stale?: boolean;
 }
 
-import type { TaskRow } from "../gsd-db.js";
+import type { TaskRow } from "../db-task-slice-rows.js";
 
 /**
  * Map an execute-task-owned gate id to the CompleteTaskParams field whose

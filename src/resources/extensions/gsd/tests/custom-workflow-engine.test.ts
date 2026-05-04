@@ -193,6 +193,18 @@ describe("CustomWorkflowEngine.resolveDispatch", () => {
     }
   });
 
+  it("returns skip when pending steps are blocked by incomplete dependencies", async () => {
+    const { engine } = setupEngine([
+      makeStep({ id: "a", dependsOn: ["b"] }),
+      makeStep({ id: "b", dependsOn: ["a"] }),
+    ]);
+
+    const state = await engine.deriveState("/unused");
+    const dispatch = await engine.resolveDispatch(state, { basePath: "/unused" });
+
+    assert.deepEqual(dispatch, { action: "skip" });
+  });
+
   it("respects dependency ordering", async () => {
     const { engine } = setupEngine([
       makeStep({ id: "a" }),
