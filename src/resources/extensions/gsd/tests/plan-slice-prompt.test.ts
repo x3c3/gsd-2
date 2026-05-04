@@ -30,6 +30,7 @@ const BASE_VARS = {
   inlinedContext: "--- test inlined context ---",
   dependencySummaries: "", executorContextConstraints: "",
   sourceFilePaths: "- **Requirements**: `.gsd/REQUIREMENTS.md`",
+  templatesDir: join(fixtureRoot, "templates"),
   skillActivation: "Load the relevant skills.",
 };
 
@@ -117,6 +118,7 @@ test("skillActivation default leaves no unresolved placeholder", () => {
     carryForwardSection: "Carry forward",
     resumeSection: "Resume",
     priorTaskLines: "- (no prior tasks)",
+    templatesDir: join(fixtureRoot, "templates"),
     taskSummaryPath: join(fixtureRoot, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-SUMMARY.md"),
     inlinedTemplates: "Template",
     verificationBudget: "~10K chars",
@@ -142,6 +144,7 @@ test("custom skillActivation is substituted into execute-task", () => {
     carryForwardSection: "Carry forward",
     resumeSection: "Resume",
     priorTaskLines: "- (no prior tasks)",
+    templatesDir: join(fixtureRoot, "templates"),
     taskSummaryPath: join(fixtureRoot, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-SUMMARY.md"),
     inlinedTemplates: "Template",
     verificationBudget: "~10K chars",

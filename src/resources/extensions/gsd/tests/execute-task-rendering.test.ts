@@ -39,6 +39,7 @@ test("execute-task prompt renders compact execution and completion gates", async
     taskPlanPath: ".gsd/milestones/M001/slices/S01/tasks/T01-PLAN.md",
     priorTaskLines: "- None",
     skillActivation: "Load relevant skills.",
+    templatesDir: join(fixtureRoot, "templates"),
     verificationBudget: "~10K chars",
     taskSummaryPath: ".gsd/milestones/M001/slices/S01/tasks/T01-SUMMARY.md",
   });

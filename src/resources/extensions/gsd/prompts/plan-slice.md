@@ -69,8 +69,8 @@ Then:
 0. If `REQUIREMENTS.md` is preloaded, identify Active requirements this slice owns/supports. Owned requirements are acceptance criteria and need task coverage plus verification. Supporting requirements are compatibility constraints; do not pull later primary work into this slice unless assigned.
 0a. Call `memory_query` with keywords from the slice title and source files. Use prior decisions, conventions, and gotchas to inform decomposition.
 1. Read the templates:
-   - `~/.gsd/agent/extensions/gsd/templates/plan.md`
-   - `~/.gsd/agent/extensions/gsd/templates/task-plan.md`
+   - `{{templatesDir}}/plan.md`
+   - `{{templatesDir}}/task-plan.md`
 2. {{skillActivation}} Record the installed skills you expect executors to use in each task plan's `skills_used` frontmatter.
 3. Define slice-level verification:
    - For non-trivial slices: plan actual test files with real assertions. Name the files.
