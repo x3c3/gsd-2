@@ -31,6 +31,7 @@ import type { GsdWorkspace, MilestoneScope } from "./workspace.js";
 import { getGateIdsForTurn, type OwnerTurn } from "./gate-registry.js";
 import { logError, logWarning } from "./workflow-logger.js";
 import { createDbAdapter, type DbAdapter } from "./db-adapter.js";
+import { createDbConnectionCache, type DbConnectionCacheEntry } from "./db-connection-cache.js";
 import { createSqliteProviderLoader, suppressSqliteWarning, type DbProviderName, type SqliteFallbackOpen } from "./db-provider.js";
 // Type-only import to avoid a circular runtime dep. The runtime side of
 // workflow-manifest.ts depends on this file, but the StateManifest type is
@@ -1301,11 +1302,29 @@ let _currentIdentityKey: string | null = null;
  * The cache allows fast re-activation of a previously opened connection when
  * callers switch between known workspaces via openDatabaseByWorkspace().
  */
-const _dbCache = new Map<string, { dbPath: string; db: DbAdapter }>();
+const _dbCache = createDbConnectionCache();
 
 /** Test helper: expose the internal cache for inspection. Not for production use. */
-export function _getDbCache(): ReadonlyMap<string, { dbPath: string; db: DbAdapter }> {
-  return _dbCache;
+export function _getDbCache(): ReadonlyMap<string, DbConnectionCacheEntry> {
+  return _dbCache.asReadonlyMap();
+}
+
+function closeCachedConnection(entry: DbConnectionCacheEntry, source: "all" | "workspace"): void {
+  try {
+    entry.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch (e) {
+    if (source === "workspace") logWarning("db", `WAL checkpoint (byWorkspace) failed: ${(e as Error).message}`);
+  }
+  try {
+    entry.db.exec("PRAGMA incremental_vacuum(64)");
+  } catch (e) {
+    if (source === "workspace") logWarning("db", `incremental vacuum (byWorkspace) failed: ${(e as Error).message}`);
+  }
+  try {
+    entry.db.close();
+  } catch (e) {
+    if (source === "workspace") logWarning("db", `database close (byWorkspace) failed: ${(e as Error).message}`);
+  }
 }
 
 /**
@@ -1318,13 +1337,7 @@ export function _getDbCache(): ReadonlyMap<string, { dbPath: string; db: DbAdapt
  */
 export function closeAllDatabases(): void {
   // Close all non-active cached connections first.
-  for (const [key, entry] of _dbCache) {
-    if (entry.db === currentDb) continue; // handled by closeDatabase() below
-    _dbCache.delete(key);
-    try { entry.db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* best-effort */ }
-    try { entry.db.exec("PRAGMA incremental_vacuum(64)"); } catch { /* best-effort */ }
-    try { entry.db.close(); } catch { /* best-effort */ }
-  }
+  _dbCache.closeNonActive(currentDb, (entry) => closeCachedConnection(entry, "all"));
   closeDatabase();
 }
 
@@ -1446,15 +1459,7 @@ export function closeDatabaseByWorkspace(workspace: GsdWorkspace): void {
     closeDatabase();
   } else {
     // Connection was displaced by a later open; close the adapter directly.
-    try {
-      cached.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    } catch (e) { logWarning("db", `WAL checkpoint (byWorkspace) failed: ${(e as Error).message}`); }
-    try {
-      cached.db.exec("PRAGMA incremental_vacuum(64)");
-    } catch (e) { logWarning("db", `incremental vacuum (byWorkspace) failed: ${(e as Error).message}`); }
-    try {
-      cached.db.close();
-    } catch (e) { logWarning("db", `database close (byWorkspace) failed: ${(e as Error).message}`); }
+    closeCachedConnection(cached, "workspace");
   }
 }
 
