@@ -33,6 +33,7 @@ import { logError, logWarning } from "./workflow-logger.js";
 import { createDbAdapter, type DbAdapter } from "./db-adapter.js";
 import { createDbConnectionCache, type DbConnectionCacheEntry } from "./db-connection-cache.js";
 import { createDbOpenState, type DbOpenPhase } from "./db-open-state.js";
+import { createDbTransactionRunner } from "./db-transaction.js";
 import { createSqliteProviderLoader, suppressSqliteWarning, type DbProviderName, type SqliteFallbackOpen } from "./db-provider.js";
 // Type-only import to avoid a circular runtime dep. The runtime side of
 // workflow-manifest.ts depends on this file, but the StateManifest type is
@@ -1606,7 +1607,7 @@ export function checkpointDatabase(): void {
   } catch (e) { logWarning("db", `WAL checkpoint failed: ${(e as Error).message}`); }
 }
 
-let _txDepth = 0;
+const _transactionRunner = createDbTransactionRunner();
 
 /**
  * Whether the current call is running inside an active SQLite transaction.
@@ -1615,35 +1616,12 @@ let _txDepth = 0;
  * and would mask the original error with a secondary "cannot VACUUM" throw.
  */
 export function isInTransaction(): boolean {
-  return _txDepth > 0;
+  return _transactionRunner.isInTransaction();
 }
 
 export function transaction<T>(fn: () => T): T {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
-
-  // Re-entrant: if already inside a transaction, just run fn() without
-  // starting a new one. SQLite does not support nested BEGIN/COMMIT.
-  if (_txDepth > 0) {
-    _txDepth++;
-    try {
-      return fn();
-    } finally {
-      _txDepth--;
-    }
-  }
-
-  currentDb.exec("BEGIN");
-  _txDepth++;
-  try {
-    const result = fn();
-    currentDb.exec("COMMIT");
-    return result;
-  } catch (err) {
-    currentDb.exec("ROLLBACK");
-    throw err;
-  } finally {
-    _txDepth--;
-  }
+  return _transactionRunner.transaction(currentDb, fn);
 }
 
 /**
@@ -1656,36 +1634,14 @@ export function transaction<T>(fn: () => T): T {
 export function readTransaction<T>(fn: () => T): T {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
 
-  if (_txDepth > 0) {
-    _txDepth++;
-    try {
-      return fn();
-    } finally {
-      _txDepth--;
-    }
-  }
-
-  currentDb.exec("BEGIN DEFERRED");
-  _txDepth++;
-  try {
-    const result = fn();
-    currentDb.exec("COMMIT");
-    return result;
-  } catch (err) {
-    try {
-      currentDb.exec("ROLLBACK");
-    } catch (rollbackErr) {
-      // A failed ROLLBACK after a failed read is a split-brain signal —
-      // the transaction is in an indeterminate state. Surface it via the
-      // logger instead of swallowing it.
-      logError("db", "snapshotState ROLLBACK failed", {
-        error: (rollbackErr as Error).message,
-      });
-    }
-    throw err;
-  } finally {
-    _txDepth--;
-  }
+  return _transactionRunner.readTransaction(currentDb, fn, (rollbackErr) => {
+    // A failed ROLLBACK after a failed read is a split-brain signal —
+    // the transaction is in an indeterminate state. Surface it via the
+    // logger instead of swallowing it.
+    logError("db", "snapshotState ROLLBACK failed", {
+      error: rollbackErr.message,
+    });
+  });
 }
 
 export function insertDecision(d: Omit<Decision, "seq">): void {
