@@ -879,7 +879,11 @@ test("autoLoop passes structured session-lock failure details to the handler", a
   );
 });
 
-test("autoLoop keeps queued sidecar work when the session lock is lost", async () => {
+// Regression for #5308: the iteration prelude must dequeue sidecar items
+// (popping the queue and emitting the `sidecar-dequeue` journal event) BEFORE
+// validateSessionLock + break-on-invalid. Inverting that order silently drops
+// queued sidecar work on lock-loss. Covers first-iteration and mid-session.
+test("autoLoop dequeues sidecar item before session-lock break (first iteration, #5308)", async () => {
   _resetPendingResolve();
 
   const ctx = makeMockCtx();
@@ -911,10 +915,85 @@ test("autoLoop keeps queued sidecar work when the session lock is lost", async (
 
   await autoLoop(ctx, pi, s, deps);
 
-  assert.equal(s.sidecarQueue.length, 1, "lost session lock must not consume queued sidecar work");
-  assert.equal(s.sidecarQueue[0]?.unitId, "M001/S01/T01/review");
-  assert.ok(!journalEvents.includes("sidecar-dequeue"), "sidecar dequeue must happen only after lock validation");
+  assert.equal(
+    s.sidecarQueue.length,
+    0,
+    "sidecar item must be popped on lock-loss iteration (pre-#5308 ordering)",
+  );
+  assert.ok(
+    journalEvents.includes("sidecar-dequeue"),
+    "sidecar-dequeue journal event must be emitted before session-lock break",
+  );
+  assert.ok(
+    deps.callLog.includes("handleLostSessionLock"),
+    "session lock handler must still fire after sidecar dequeue",
+  );
   assert.ok(!deps.callLog.includes("deriveState"), "lock loss should stop before deriving state");
+});
+
+test("autoLoop dequeues sidecar item before session-lock break (mid-session, #5308)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  const pi = makeMockPi();
+  const s = makeLoopSession();
+
+  const journalEvents: string[] = [];
+  let lockCheckCount = 0;
+  const deps = makeMockDeps({
+    // First iteration: lock valid; second iteration: lock invalidates.
+    validateSessionLock: () => {
+      lockCheckCount += 1;
+      if (lockCheckCount === 1) {
+        return { valid: true } as SessionLockStatus;
+      }
+      return {
+        valid: false,
+        failureReason: "compromised",
+        expectedPid: process.pid,
+      } as SessionLockStatus;
+    },
+    handleLostSessionLock: () => {
+      deps.callLog.push("handleLostSessionLock");
+    },
+    emitJournalEvent: (entry) => {
+      journalEvents.push(entry.eventType);
+    },
+    // Enqueue a sidecar item at the end of iteration 1, so iteration 2 begins
+    // with a non-empty queue and an invalid lock.
+    postUnitPostVerification: async () => {
+      deps.callLog.push("postUnitPostVerification");
+      s.sidecarQueue.push({
+        kind: "hook" as const,
+        unitType: "hook/review",
+        unitId: "M001/S01/T01/review",
+        prompt: "review the code",
+      });
+      return "continue" as const;
+    },
+  });
+
+  const loopPromise = autoLoop(ctx, pi, s, deps);
+  // Allow the loop to reach runUnit's await on iteration 1.
+  await new Promise((r) => setTimeout(r, 50));
+  resolveAgentEnd(makeEvent());
+  await loopPromise;
+
+  assert.ok(lockCheckCount >= 2, "lock validator must run on iteration 2");
+  assert.equal(
+    s.sidecarQueue.length,
+    0,
+    "queued sidecar item must be popped on the lock-loss iteration",
+  );
+  assert.ok(
+    journalEvents.includes("sidecar-dequeue"),
+    "sidecar-dequeue journal event must be emitted before session-lock break",
+  );
+  assert.ok(
+    deps.callLog.includes("handleLostSessionLock"),
+    "lock-loss handler must still fire on iteration 2",
+  );
 });
 
 test("autoLoop exits on terminal blocked state", async (t) => {

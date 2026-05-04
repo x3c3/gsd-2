@@ -359,6 +359,20 @@ export async function autoLoop(
       const prefs = deps.loadEffectiveGSDPreferences()?.preferences;
       const uokFlags = resolveUokFlags(prefs);
 
+      // ── Check sidecar queue before deriveState ──
+      // NOTE: Sidecar dequeue MUST run before validateWorkflowSessionLock so a
+      // queued item is popped (and the `sidecar-dequeue` journal event emitted)
+      // even when the session lock invalidates this iteration. Inverting this
+      // order silently drops queued items on lock-loss. Refs #5308.
+      const sidecarItem = await dequeueSidecarItem({
+        queue: s.sidecarQueue,
+        executionGraphEnabled: uokFlags.executionGraph,
+        scheduleQueue: scheduleSidecarQueue,
+        warnSchedulingFailure: message => logWarning("dispatch", `sidecar queue scheduling failed: ${message}`),
+        logDequeue: payload => debugLog("autoLoop", { phase: "sidecar-dequeue", ...payload }),
+        emitDequeue: payload => journalReporter.emit("sidecar-dequeue", payload),
+      });
+
       const sessionLockOutcome = validateWorkflowSessionLock({
         active: s.active,
         iteration,
@@ -381,16 +395,6 @@ export async function autoLoop(
         finishTurn("stopped", "manual-attention", sessionLockOutcome.reason);
         break;
       }
-
-      // ── Check sidecar queue before deriveState ──
-      const sidecarItem = await dequeueSidecarItem({
-        queue: s.sidecarQueue,
-        executionGraphEnabled: uokFlags.executionGraph,
-        scheduleQueue: scheduleSidecarQueue,
-        warnSchedulingFailure: message => logWarning("dispatch", `sidecar queue scheduling failed: ${message}`),
-        logDequeue: payload => debugLog("autoLoop", { phase: "sidecar-dequeue", ...payload }),
-        emitDequeue: payload => journalReporter.emit("sidecar-dequeue", payload),
-      });
 
       const ic: IterationContext = { ctx, pi, s, deps, prefs, iteration, flowId, nextSeq };
       journalReporter.emit("iteration-start", { iteration });
