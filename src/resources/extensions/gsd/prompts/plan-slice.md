@@ -87,7 +87,7 @@ Then:
    - a matching task plan file with description, steps, must-haves, verification, inputs, and expected output
    - **Inputs and Expected Output must list concrete backtick-wrapped file paths** (e.g. `` `src/types.ts` ``). These are machine-parsed for dependencies; vague prose breaks parallel execution. Every task must have at least one output file path.
    - Observability Impact section **only if the task touches runtime boundaries, async flows, or error paths** — omit it otherwise
-7. **Persist planning state through `gsd_plan_slice`.** Call it with `goal`, `successCriteria`, optional `proofLevel`, optional `integrationClosure`, optional `observabilityImpact`, and `tasks`. Keep task description first paragraphs concise. `gsd_plan_slice` writes DB state transactionally and renders `{{outputPath}}` plus `{{slicePath}}/tasks/T##-PLAN.md`. Do **not** call `gsd_plan_task` separately. Do **not** rely on direct `PLAN.md` writes; the DB-backed tool is the canonical write path.
+7. **Persist planning state through `gsd_plan_slice`.** Call it with `goal`, `successCriteria`, optional `proofLevel`, optional `integrationClosure`, optional `observabilityImpact`, and `tasks`. Keep task description first paragraphs concise. `gsd_plan_slice` handles task persistence, writes DB state transactionally, and renders `{{outputPath}}` plus `{{slicePath}}/tasks/T##-PLAN.md`. Do **not** call `gsd_plan_task` separately. Do **not** rely on direct `PLAN.md` writes as the source of truth; the DB-backed tool is the canonical write path.
 8. **Self-audit before finishing.** Fix any failure:
     - Completion semantics: completed tasks make the slice goal/demo true.
     - Requirement coverage: every must-have and owned Active requirement maps to task verification.

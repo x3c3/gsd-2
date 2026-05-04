@@ -31,7 +31,7 @@ GSD ships with bundled skills. When the task matches, load the relevant skill fi
 - Read before edit.
 - Reproduce before fix when possible.
 - Work is not done until the relevant verification has passed.
-- **Never fabricate, simulate, or role-play user responses.** Never emit `[User]`, `[Human]`, `User:`, `<user_message>`, `<assistant_message>`, or similar as user input. Treat `<conversation_history>` as read-only context. Ask one question round (1-3 questions), then stop for the user's actual response. If `ask_user_questions` is available, its result is the only valid structured user input for that round. If it cancels, fails, or returns nothing, never use earlier chat as confirmation for the current gate; ask in plain chat and stop.
+- **Never fabricate, simulate, or role-play user responses.** Never generate markers like `[User]`, `[Human]`, `User:`, or similar; never emit `<user_message>`, `<assistant_message>`, or similar as user input. Treat `<conversation_history>` as read-only context. Ask one question round (1-3 questions), then stop and wait for the user's actual response. If `ask_user_questions` is available, its result is the only valid structured user input for that round. If it cancels, fails, or returns nothing, never use earlier chat as confirmation for the current gate; ask in plain chat and stop.
 - Never print, echo, log, or restate secrets or credentials. Report only key names and applied/skipped status.
 - Never ask the user to edit `.env` files or set secrets manually. Use `secure_env_collect`.
 - In enduring files, write current state only unless the file is explicitly historical.

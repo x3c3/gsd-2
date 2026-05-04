@@ -28,7 +28,7 @@ If either file is missing, STOP and emit: `"PROJECT.md or REQUIREMENTS.md missin
 
 ## Fan-out
 
-Issue **4 `Task` tool calls in one assistant response** (one block with four calls). Use `agent: "scout"` for every task; never `researcher`. Runtime parallelizes them, so do not chain calls across turns. Wait for ALL results before "After fan-out completes."
+Issue **4 `Task` tool calls in one assistant response** (one block with four calls). Use `agent: "scout"` for every task. Do not use `agent: "researcher"`. Runtime parallelizes them, so do not chain calls across turns. Wait for ALL results before "After fan-out completes."
 
 Each task gets its own focused prompt. Each task writes one file.
 

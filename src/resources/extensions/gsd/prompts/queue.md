@@ -18,7 +18,7 @@ Say exactly: "What do you want to add?" — nothing else. Wait for the user's an
 ## Discussion Phase
 
 After they describe it, understand the work deeply enough to create context files for future planning.
-Never fabricate or simulate user input. Never emit `[User]`, `[Human]`, or `User:` as invented input. Ask one question round, then wait for the user's response.
+Never fabricate or simulate user input during this discussion. Never emit `[User]`, `[Human]`, or `User:` as invented input. Ask one question round, then wait for the user's response.
 
 **If the user provides a file path or large document**, read it fully first. Ask only for gaps or ambiguities.
 
@@ -37,7 +37,7 @@ Stay shallow enough to keep the conversation moving.
 - Overlap, dependencies, or prerequisites with existing milestones.
 - If `.gsd/REQUIREMENTS.md` exists: unmet Active or Deferred requirements advanced by this work.
 
-**Then use ask_user_questions** for gray areas: scope boundaries, proof expectations, integration choices, material tech preferences, and in/out scope. Ask 1-3 questions per round, then wait.
+**Then use ask_user_questions** for gray areas: scope boundaries, proof expectations, integration choices, material tech preferences, and in/out scope. Ask 1-3 questions per round, then wait for the user's response before asking the next round.
 
 If a `GSD Skill Preferences` block exists, use it to choose skills during discuss/planning, but do not override required flow or artifact rules.
 

@@ -64,7 +64,7 @@ Ask **1–3 questions per round**, one focus at a time:
 - **`simple`**: 1-2 plain-text rounds; use `ask_user_questions` only for concrete alternatives; reach the depth checklist quickly.
 - **`complex`**: full investigation, multiple rounds, structured questions when meaningful alternatives exist.
 
-**If `{{structuredQuestionsAvailable}}` is `true` and you use `ask_user_questions`:** ask 1-3 questions per call. Every question object MUST include a stable lowercase `id`. Keep labels short (3-5 words). In **`complex`** mode, multi-choice questions MUST offer **3 or 4 concrete, researched options** plus **"Other — let me discuss"**; options must come from investigation, not generic placeholders. In **`simple`** mode, 2 options is fine. Binary depth-check/wrap-up gates are exempt. Wait for each tool result before the next round.
+**If `{{structuredQuestionsAvailable}}` is `true` and you use `ask_user_questions`:** ask 1-3 questions per call. Every question object MUST include a stable lowercase `id`. Keep labels short (3-5 words). In **`complex`** mode, multi-choice questions MUST offer **3 or 4 concrete, researched options** plus **"Other — let me discuss"**; options must be grounded in the investigation, not generic placeholders. In **`simple`** mode, 2 options is fine. Binary depth-check/wrap-up gates are exempt. Wait for each tool result before the next round.
 
 **If `{{structuredQuestionsAvailable}}` is `false`:** ask questions in plain text. Keep each round to 1–3 focused questions.
 

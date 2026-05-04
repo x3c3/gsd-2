@@ -41,7 +41,7 @@ Ask **1–3 questions per round**. Target one focus at a time:
 
 **Never fabricate or simulate user input.** Never generate fake transcript markers like `[User]`, `[Human]`, or `User:`. Ask one question round, then wait for the user's actual response before continuing.
 
-**If `{{structuredQuestionsAvailable}}` is `true`:** use `ask_user_questions` exactly once per turn with 1-3 question objects. Keep labels short (3-5 words). In **`complex`** mode, multi-choice questions MUST offer **3 or 4 concrete, researched options** plus **"Other — let me discuss"**; options must come from investigation, not generic placeholders. In **`simple`** mode, 2 options is fine for binary alternatives. Binary depth-check/wrap-up gates are exempt. If the user chooses "Other — let me discuss" or gives a long freeform answer, switch to plain-text follow-up before resuming structured questions.
+**If `{{structuredQuestionsAvailable}}` is `true`:** use `ask_user_questions` exactly once per turn with 1-3 question objects. Keep labels short (3-5 words). In **`complex`** mode, multi-choice questions MUST offer **3 or 4 concrete, researched options** plus **"Other — let me discuss"**; options must be grounded in the investigation, not generic placeholders. In **`simple`** mode, 2 options is fine for binary alternatives. Binary depth-check/wrap-up gates are exempt. If the user chooses "Other — let me discuss" or gives a long freeform answer, switch to plain-text follow-up before resuming structured questions.
 
 **If `{{structuredQuestionsAvailable}}` is `false`:** ask questions in plain text. Keep each round to 1–3 focused questions. Wait for answers before asking the next round.
 
@@ -52,7 +52,7 @@ After each answer, investigate only new unknowns, then ask the next round.
 After each answer round, decide whether the context would be strong enough.
 
 - **Incremental persistence:** After every 2 question rounds, silently save `{{milestoneId}}-CONTEXT-DRAFT.md` via `gsd_summary_save` with `artifact_type: "CONTEXT-DRAFT"`. Do NOT mention this invisible bookkeeping. The final context overwrites it.
-- If not ready, investigate new unknowns and continue. Do **not** ask meta "ready to wrap up?" questions after every round.
+- If not ready, investigate new unknowns and continue. Do **not** ask a meta "ready to wrap up?" question after every round.
 - Use one wrap-up prompt only when the depth checklist is satisfied or the user wants to stop.
 - **If `{{structuredQuestionsAvailable}}` is `true` and you need that wrap-up prompt:** use `ask_user_questions` with options:
   - "Write the context file" *(recommended when depth is satisfied)*
