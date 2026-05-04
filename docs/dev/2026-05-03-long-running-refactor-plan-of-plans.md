@@ -638,6 +638,7 @@ Baseline usage is documented in `docs/dev/refactor-baseline-runbook.md`.
 - Wired `legacy.providerDefaultUsed` to canonical provider-default model fallback selection.
 - Added one-warning-per-counter diagnostics through the shared legacy telemetry layer.
 - Added opt-in snapshot persistence via `GSD_LEGACY_TELEMETRY_FILE` so representative runs can produce deletion-gate evidence without hardcoded local paths.
+- Added `npm run legacy:cleanup:gate -- --file <snapshot>` to block deletion PRs when any Phase 8 counter is missing or nonzero.
 
 **Migration notes before deletion:**
 
