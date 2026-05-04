@@ -378,6 +378,7 @@ export async function autoLoop(
         },
       });
       if (sessionLockOutcome.action === "stop" && sessionLockOutcome.reason === "session-lock-lost") {
+        finishTurn("stopped", "manual-attention", sessionLockOutcome.reason);
         break;
       }
 
@@ -427,6 +428,7 @@ export async function autoLoop(
           isComplete: engineState.isComplete,
         });
         if (engineState.isComplete) {
+          finishTurn("completed");
           await deps.stopAuto(ctx, pi, "Workflow complete");
           break;
         }
@@ -873,6 +875,7 @@ export async function autoLoop(
 
         if (cooldownDecision.action === "stop") {
           ctx.ui.notify(cooldownDecision.notifyMessage, "error");
+          finishTurn("stopped", "timeout", msg);
           await deps.stopAuto(ctx, pi, cooldownDecision.stopMessage);
           break;
         }
