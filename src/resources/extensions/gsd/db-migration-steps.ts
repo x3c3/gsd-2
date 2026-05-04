@@ -179,3 +179,195 @@ export function applyMigrationV8PlanningFields(db: DbAdapter): void {
   `);
   db.exec("CREATE INDEX IF NOT EXISTS idx_replan_history_milestone ON replan_history(milestone_id, created_at)");
 }
+
+export function applyMigrationV9Ordering(db: DbAdapter): void {
+  ensureColumn(db, "slices", "sequence", "ALTER TABLE slices ADD COLUMN sequence INTEGER DEFAULT 0");
+  ensureColumn(db, "tasks", "sequence", "ALTER TABLE tasks ADD COLUMN sequence INTEGER DEFAULT 0");
+}
+
+export function applyMigrationV10ReplanTrigger(db: DbAdapter): void {
+  ensureColumn(db, "slices", "replan_triggered_at", "ALTER TABLE slices ADD COLUMN replan_triggered_at TEXT DEFAULT NULL");
+}
+
+export function applyMigrationV11TaskPlanning(db: DbAdapter): void {
+  ensureColumn(db, "tasks", "full_plan_md", "ALTER TABLE tasks ADD COLUMN full_plan_md TEXT NOT NULL DEFAULT ''");
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_replan_history_unique
+    ON replan_history(milestone_id, slice_id, task_id)
+    WHERE slice_id IS NOT NULL AND task_id IS NOT NULL
+  `);
+}
+
+export function applyMigrationV12QualityGates(db: DbAdapter): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quality_gates (
+      milestone_id TEXT NOT NULL,
+      slice_id TEXT NOT NULL,
+      gate_id TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'slice',
+      task_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      verdict TEXT NOT NULL DEFAULT '',
+      rationale TEXT NOT NULL DEFAULT '',
+      findings TEXT NOT NULL DEFAULT '',
+      evaluated_at TEXT DEFAULT NULL,
+      PRIMARY KEY (milestone_id, slice_id, gate_id, task_id),
+      FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id)
+    )
+  `);
+}
+
+export function applyMigrationV13HotPathIndexes(
+  db: DbAdapter,
+  ensureVerificationEvidenceDedupIndex: (db: DbAdapter) => void,
+): void {
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(milestone_id, slice_id, status)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_slices_active ON slices(milestone_id, status)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
+  ensureVerificationEvidenceDedupIndex(db);
+}
+
+export function applyMigrationV14SliceDependencies(db: DbAdapter): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS slice_dependencies (
+      milestone_id TEXT NOT NULL,
+      slice_id TEXT NOT NULL,
+      depends_on_slice_id TEXT NOT NULL,
+      PRIMARY KEY (milestone_id, slice_id, depends_on_slice_id),
+      FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id),
+      FOREIGN KEY (milestone_id, depends_on_slice_id) REFERENCES slices(milestone_id, id)
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
+}
+
+export function applyMigrationV15AuditTables(db: DbAdapter): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gate_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trace_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      gate_id TEXT NOT NULL,
+      gate_type TEXT NOT NULL DEFAULT '',
+      unit_type TEXT DEFAULT NULL,
+      unit_id TEXT DEFAULT NULL,
+      milestone_id TEXT DEFAULT NULL,
+      slice_id TEXT DEFAULT NULL,
+      task_id TEXT DEFAULT NULL,
+      outcome TEXT NOT NULL DEFAULT 'pass',
+      failure_class TEXT NOT NULL DEFAULT 'none',
+      rationale TEXT NOT NULL DEFAULT '',
+      findings TEXT NOT NULL DEFAULT '',
+      attempt INTEGER NOT NULL DEFAULT 1,
+      max_attempts INTEGER NOT NULL DEFAULT 1,
+      retryable INTEGER NOT NULL DEFAULT 0,
+      evaluated_at TEXT NOT NULL DEFAULT ''
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS turn_git_transactions (
+      trace_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      unit_type TEXT DEFAULT NULL,
+      unit_id TEXT DEFAULT NULL,
+      stage TEXT NOT NULL DEFAULT 'turn-start',
+      action TEXT NOT NULL DEFAULT 'status-only',
+      push INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'ok',
+      error TEXT DEFAULT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (trace_id, turn_id, stage)
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_events (
+      event_id TEXT PRIMARY KEY,
+      trace_id TEXT NOT NULL,
+      turn_id TEXT DEFAULT NULL,
+      caused_by TEXT DEFAULT NULL,
+      category TEXT NOT NULL,
+      type TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}'
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_turn_index (
+      trace_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      first_ts TEXT NOT NULL,
+      last_ts TEXT NOT NULL,
+      event_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (trace_id, turn_id)
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_turn ON gate_runs(trace_id, turn_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_lookup ON gate_runs(milestone_id, slice_id, task_id, gate_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_turn_git_tx_turn ON turn_git_transactions(trace_id, turn_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_trace ON audit_events(trace_id, ts)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_turn ON audit_events(trace_id, turn_id, ts)");
+}
+
+export function applyMigrationV16EscalationSource(db: DbAdapter): void {
+  ensureColumn(db, "slices", "is_sketch", "ALTER TABLE slices ADD COLUMN is_sketch INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "slices", "sketch_scope", "ALTER TABLE slices ADD COLUMN sketch_scope TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "decisions", "source", "ALTER TABLE decisions ADD COLUMN source TEXT NOT NULL DEFAULT 'discussion'");
+}
+
+export function applyMigrationV17TaskEscalation(db: DbAdapter): void {
+  ensureColumn(db, "tasks", "blocker_source", "ALTER TABLE tasks ADD COLUMN blocker_source TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "tasks", "escalation_pending", "ALTER TABLE tasks ADD COLUMN escalation_pending INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "tasks", "escalation_awaiting_review", "ALTER TABLE tasks ADD COLUMN escalation_awaiting_review INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "tasks", "escalation_artifact_path", "ALTER TABLE tasks ADD COLUMN escalation_artifact_path TEXT DEFAULT NULL");
+  ensureColumn(db, "tasks", "escalation_override_applied_at", "ALTER TABLE tasks ADD COLUMN escalation_override_applied_at TEXT DEFAULT NULL");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_escalation_pending ON tasks(milestone_id, slice_id, escalation_pending)");
+}
+
+export function applyMigrationV18MemorySources(db: DbAdapter): void {
+  ensureColumn(db, "memories", "scope", "ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'");
+  ensureColumn(db, "memories", "tags", "ALTER TABLE memories ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_sources (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      uri TEXT,
+      title TEXT,
+      content TEXT NOT NULL,
+      content_hash TEXT NOT NULL UNIQUE,
+      imported_at TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'project',
+      tags TEXT NOT NULL DEFAULT '[]'
+    )
+  `);
+  ensureColumn(db, "memory_sources", "scope", "ALTER TABLE memory_sources ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'");
+  ensureColumn(db, "memory_sources", "tags", "ALTER TABLE memory_sources ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope ON memory_sources(scope)");
+}
+
+export function applyMigrationV20MemoryRelations(db: DbAdapter): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_relations (
+      from_id TEXT NOT NULL,
+      to_id TEXT NOT NULL,
+      rel TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0.8,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (from_id, to_id, rel)
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_from ON memory_relations(from_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_to ON memory_relations(to_id)");
+}
+
+export function applyMigrationV21StructuredMemories(db: DbAdapter): void {
+  ensureColumn(db, "memories", "structured_fields", "ALTER TABLE memories ADD COLUMN structured_fields TEXT DEFAULT NULL");
+}
+
+export function applyMigrationV23MilestoneQueue(db: DbAdapter): void {
+  ensureColumn(db, "milestones", "sequence", "ALTER TABLE milestones ADD COLUMN sequence INTEGER DEFAULT 0");
+}

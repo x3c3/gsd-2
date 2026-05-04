@@ -62,6 +62,19 @@ import {
   applyMigrationV6SliceSummaries,
   applyMigrationV7Dependencies,
   applyMigrationV8PlanningFields,
+  applyMigrationV9Ordering,
+  applyMigrationV10ReplanTrigger,
+  applyMigrationV11TaskPlanning,
+  applyMigrationV12QualityGates,
+  applyMigrationV13HotPathIndexes,
+  applyMigrationV14SliceDependencies,
+  applyMigrationV15AuditTables,
+  applyMigrationV16EscalationSource,
+  applyMigrationV17TaskEscalation,
+  applyMigrationV18MemorySources,
+  applyMigrationV20MemoryRelations,
+  applyMigrationV21StructuredMemories,
+  applyMigrationV23MilestoneQueue,
 } from "./db-migration-steps.js";
 import { isMemoriesFtsAvailableSchema, tryCreateMemoriesFtsSchema } from "./db-memory-fts-schema.js";
 import { createDbOpenState, type DbOpenPhase } from "./db-open-state.js";
@@ -201,28 +214,17 @@ function migrateSchema(db: DbAdapter): void {
     }
 
     if (currentVersion < 9) {
-      ensureColumn(db, "slices", "sequence", `ALTER TABLE slices ADD COLUMN sequence INTEGER DEFAULT 0`);
-      ensureColumn(db, "tasks", "sequence", `ALTER TABLE tasks ADD COLUMN sequence INTEGER DEFAULT 0`);
-
+      applyMigrationV9Ordering(db);
       recordSchemaVersion(db, 9);
     }
 
     if (currentVersion < 10) {
-      ensureColumn(db, "slices", "replan_triggered_at", `ALTER TABLE slices ADD COLUMN replan_triggered_at TEXT DEFAULT NULL`);
-
+      applyMigrationV10ReplanTrigger(db);
       recordSchemaVersion(db, 10);
     }
 
     if (currentVersion < 11) {
-      ensureColumn(db, "tasks", "full_plan_md", `ALTER TABLE tasks ADD COLUMN full_plan_md TEXT NOT NULL DEFAULT ''`);
-      // Add unique constraint to replan_history for idempotency:
-      // one replan record per blocker task per slice per milestone.
-      db.exec(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_replan_history_unique
-        ON replan_history(milestone_id, slice_id, task_id)
-        WHERE slice_id IS NOT NULL AND task_id IS NOT NULL
-      `);
-
+      applyMigrationV11TaskPlanning(db);
       recordSchemaVersion(db, 11);
     }
 
@@ -232,165 +234,37 @@ function migrateSchema(db: DbAdapter): void {
       // DBs that migrate through v12. The corrected DDL uses
       // task_id TEXT NOT NULL DEFAULT '' with a plain column list PK. DBs that
       // were created with the broken DDL are repaired by the v22 migration below.
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS quality_gates (
-          milestone_id TEXT NOT NULL,
-          slice_id TEXT NOT NULL,
-          gate_id TEXT NOT NULL,
-          scope TEXT NOT NULL DEFAULT 'slice',
-          task_id TEXT NOT NULL DEFAULT '',
-          status TEXT NOT NULL DEFAULT 'pending',
-          verdict TEXT NOT NULL DEFAULT '',
-          rationale TEXT NOT NULL DEFAULT '',
-          findings TEXT NOT NULL DEFAULT '',
-          evaluated_at TEXT DEFAULT NULL,
-          PRIMARY KEY (milestone_id, slice_id, gate_id, task_id),
-          FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id)
-        )
-      `);
+      applyMigrationV12QualityGates(db);
       recordSchemaVersion(db, 12);
     }
 
     if (currentVersion < 13) {
-      // Hot-path indexes for auto-loop dispatch queries
-      db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(milestone_id, slice_id, status)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_slices_active ON slices(milestone_id, status)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
-      ensureVerificationEvidenceDedupIndex(db);
+      applyMigrationV13HotPathIndexes(db, ensureVerificationEvidenceDedupIndex);
       recordSchemaVersion(db, 13);
     }
 
     if (currentVersion < 14) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS slice_dependencies (
-          milestone_id TEXT NOT NULL,
-          slice_id TEXT NOT NULL,
-          depends_on_slice_id TEXT NOT NULL,
-          PRIMARY KEY (milestone_id, slice_id, depends_on_slice_id),
-          FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id),
-          FOREIGN KEY (milestone_id, depends_on_slice_id) REFERENCES slices(milestone_id, id)
-        )
-      `);
-      db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
+      applyMigrationV14SliceDependencies(db);
       recordSchemaVersion(db, 14);
     }
 
     if (currentVersion < 15) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS gate_runs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          trace_id TEXT NOT NULL,
-          turn_id TEXT NOT NULL,
-          gate_id TEXT NOT NULL,
-          gate_type TEXT NOT NULL DEFAULT '',
-          unit_type TEXT DEFAULT NULL,
-          unit_id TEXT DEFAULT NULL,
-          milestone_id TEXT DEFAULT NULL,
-          slice_id TEXT DEFAULT NULL,
-          task_id TEXT DEFAULT NULL,
-          outcome TEXT NOT NULL DEFAULT 'pass',
-          failure_class TEXT NOT NULL DEFAULT 'none',
-          rationale TEXT NOT NULL DEFAULT '',
-          findings TEXT NOT NULL DEFAULT '',
-          attempt INTEGER NOT NULL DEFAULT 1,
-          max_attempts INTEGER NOT NULL DEFAULT 1,
-          retryable INTEGER NOT NULL DEFAULT 0,
-          evaluated_at TEXT NOT NULL DEFAULT ''
-        )
-      `);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS turn_git_transactions (
-          trace_id TEXT NOT NULL,
-          turn_id TEXT NOT NULL,
-          unit_type TEXT DEFAULT NULL,
-          unit_id TEXT DEFAULT NULL,
-          stage TEXT NOT NULL DEFAULT 'turn-start',
-          action TEXT NOT NULL DEFAULT 'status-only',
-          push INTEGER NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'ok',
-          error TEXT DEFAULT NULL,
-          metadata_json TEXT NOT NULL DEFAULT '{}',
-          updated_at TEXT NOT NULL DEFAULT '',
-          PRIMARY KEY (trace_id, turn_id, stage)
-        )
-      `);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS audit_events (
-          event_id TEXT PRIMARY KEY,
-          trace_id TEXT NOT NULL,
-          turn_id TEXT DEFAULT NULL,
-          caused_by TEXT DEFAULT NULL,
-          category TEXT NOT NULL,
-          type TEXT NOT NULL,
-          ts TEXT NOT NULL,
-          payload_json TEXT NOT NULL DEFAULT '{}'
-        )
-      `);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS audit_turn_index (
-          trace_id TEXT NOT NULL,
-          turn_id TEXT NOT NULL,
-          first_ts TEXT NOT NULL,
-          last_ts TEXT NOT NULL,
-          event_count INTEGER NOT NULL DEFAULT 0,
-          PRIMARY KEY (trace_id, turn_id)
-        )
-      `);
-      db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_turn ON gate_runs(trace_id, turn_id)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_gate_runs_lookup ON gate_runs(milestone_id, slice_id, task_id, gate_id)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_turn_git_tx_turn ON turn_git_transactions(trace_id, turn_id)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_trace ON audit_events(trace_id, ts)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_turn ON audit_events(trace_id, turn_id, ts)");
+      applyMigrationV15AuditTables(db);
       recordSchemaVersion(db, 15);
     }
 
     if (currentVersion < 16) {
-      // ADR-011 Phase 1: sketch-then-refine progressive planning — sketch columns on slices.
-      ensureColumn(db, "slices", "is_sketch", `ALTER TABLE slices ADD COLUMN is_sketch INTEGER NOT NULL DEFAULT 0`);
-      ensureColumn(db, "slices", "sketch_scope", `ALTER TABLE slices ADD COLUMN sketch_scope TEXT NOT NULL DEFAULT ''`);
-      // ADR-011 Phase 2: decisions can now be sourced from escalation resolutions.
-      ensureColumn(db, "decisions", "source", `ALTER TABLE decisions ADD COLUMN source TEXT NOT NULL DEFAULT 'discussion'`);
+      applyMigrationV16EscalationSource(db);
       recordSchemaVersion(db, 16);
     }
 
     if (currentVersion < 17) {
-      // ADR-011 Phase 2: mid-execution escalation — columns on the tasks table.
-      ensureColumn(db, "tasks", "blocker_source", `ALTER TABLE tasks ADD COLUMN blocker_source TEXT NOT NULL DEFAULT ''`);
-      ensureColumn(db, "tasks", "escalation_pending", `ALTER TABLE tasks ADD COLUMN escalation_pending INTEGER NOT NULL DEFAULT 0`);
-      ensureColumn(db, "tasks", "escalation_awaiting_review", `ALTER TABLE tasks ADD COLUMN escalation_awaiting_review INTEGER NOT NULL DEFAULT 0`);
-      ensureColumn(db, "tasks", "escalation_artifact_path", `ALTER TABLE tasks ADD COLUMN escalation_artifact_path TEXT DEFAULT NULL`);
-      ensureColumn(db, "tasks", "escalation_override_applied_at", `ALTER TABLE tasks ADD COLUMN escalation_override_applied_at TEXT DEFAULT NULL`);
-      db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_escalation_pending ON tasks(milestone_id, slice_id, escalation_pending)");
+      applyMigrationV17TaskEscalation(db);
       recordSchemaVersion(db, 17);
     }
 
     if (currentVersion < 18) {
-      // Memory system Phase 2: scope + tags on memories, plus memory_sources
-      // table for raw ingested content (notes, files, URLs, artifacts).
-      ensureColumn(db, "memories", "scope", `ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`);
-      ensureColumn(db, "memories", "tags", `ALTER TABLE memories ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS memory_sources (
-          id TEXT PRIMARY KEY,
-          kind TEXT NOT NULL,
-          uri TEXT,
-          title TEXT,
-          content TEXT NOT NULL,
-          content_hash TEXT NOT NULL UNIQUE,
-          imported_at TEXT NOT NULL,
-          scope TEXT NOT NULL DEFAULT 'project',
-          tags TEXT NOT NULL DEFAULT '[]'
-        )
-      `);
-      // If memory_sources already existed before v18 (created by an earlier
-      // version of initSchema that lacked scope/tags), add the missing columns.
-      ensureColumn(db, "memory_sources", "scope", `ALTER TABLE memory_sources ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`);
-      ensureColumn(db, "memory_sources", "tags", `ALTER TABLE memory_sources ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`);
-      db.exec("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope ON memory_sources(scope)");
+      applyMigrationV18MemorySources(db);
       recordSchemaVersion(db, 18);
     }
 
@@ -418,31 +292,12 @@ function migrateSchema(db: DbAdapter): void {
     }
 
     if (currentVersion < 20) {
-      // Memory system Phase 4: knowledge-graph relations between memories.
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS memory_relations (
-          from_id TEXT NOT NULL,
-          to_id TEXT NOT NULL,
-          rel TEXT NOT NULL,
-          confidence REAL NOT NULL DEFAULT 0.8,
-          created_at TEXT NOT NULL,
-          PRIMARY KEY (from_id, to_id, rel)
-        )
-      `);
-      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_from ON memory_relations(from_id)");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_to ON memory_relations(to_id)");
+      applyMigrationV20MemoryRelations(db);
       recordSchemaVersion(db, 20);
     }
 
     if (currentVersion < 21) {
-      // ADR-013 Step 2: preserve structured fields (gsd_save_decision's
-      // scope/decision/choice/rationale/made_by/revisable) on memories rows so
-      // the eventual decisions->memories cutover does not lose schema fidelity.
-      // Nullable JSON column — existing rows stay NULL until backfilled in Step 5.
-      // Use ensureColumn for race-safety (matches v15-v18 pattern; bare ALTER
-      // throws "duplicate column" on the loser of a concurrent open race even
-      // though the transaction wrapper protects the schema_version row).
-      ensureColumn(db, "memories", "structured_fields", "ALTER TABLE memories ADD COLUMN structured_fields TEXT DEFAULT NULL");
+      applyMigrationV21StructuredMemories(db);
       recordSchemaVersion(db, 21);
     }
 
@@ -490,10 +345,7 @@ function migrateSchema(db: DbAdapter): void {
     }
 
     if (currentVersion < 23) {
-      // v23: milestone queue ordering moves into the canonical DB. The
-      // historical QUEUE-ORDER.json file remains a projection, but runtime
-      // derivation must not read it as authoritative state.
-      ensureColumn(db, "milestones", "sequence", "ALTER TABLE milestones ADD COLUMN sequence INTEGER DEFAULT 0");
+      applyMigrationV23MilestoneQueue(db);
       recordSchemaVersion(db, 23);
     }
 
@@ -852,6 +704,15 @@ export function checkpointDatabase(): void {
 
 const _transactionRunner = createDbTransactionRunner();
 
+function createTransactionControls(db: DbAdapter) {
+  return {
+    begin: () => db.exec("BEGIN"),
+    beginRead: () => db.exec("BEGIN DEFERRED"),
+    commit: () => db.exec("COMMIT"),
+    rollback: () => db.exec("ROLLBACK"),
+  };
+}
+
 /**
  * Whether the current call is running inside an active SQLite transaction.
  * Statement-time recovery paths (e.g. VACUUM retry on a malformed memory
@@ -864,7 +725,7 @@ export function isInTransaction(): boolean {
 
 export function transaction<T>(fn: () => T): T {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
-  return _transactionRunner.transaction(currentDb, fn);
+  return _transactionRunner.transaction(createTransactionControls(currentDb), fn);
 }
 
 /**
@@ -877,7 +738,7 @@ export function transaction<T>(fn: () => T): T {
 export function readTransaction<T>(fn: () => T): T {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
 
-  return _transactionRunner.readTransaction(currentDb, fn, (rollbackErr) => {
+  return _transactionRunner.readTransaction(createTransactionControls(currentDb), fn, (rollbackErr) => {
     // A failed ROLLBACK after a failed read is a split-brain signal —
     // the transaction is in an indeterminate state. Surface it via the
     // logger instead of swallowing it.

@@ -1,7 +1,12 @@
 // Project/App: GSD-2
-// File Purpose: Transaction depth and BEGIN/COMMIT/ROLLBACK helpers for the GSD database facade.
+// File Purpose: Transaction depth helper for the GSD database facade.
 
-import type { DbAdapter } from "./db-adapter.js";
+export interface DbTransactionControls {
+  begin(): void;
+  beginRead(): void;
+  commit(): void;
+  rollback(): void;
+}
 
 export class DbTransactionRunner {
   private depth = 0;
@@ -10,19 +15,19 @@ export class DbTransactionRunner {
     return this.depth > 0;
   }
 
-  transaction<T>(db: DbAdapter, fn: () => T): T {
+  transaction<T>(controls: DbTransactionControls, fn: () => T): T {
     if (this.depth > 0) {
       return this.runNested(fn);
     }
 
-    db.exec("BEGIN");
+    controls.begin();
     this.depth++;
     try {
       const result = fn();
-      db.exec("COMMIT");
+      controls.commit();
       return result;
     } catch (err) {
-      db.exec("ROLLBACK");
+      controls.rollback();
       throw err;
     } finally {
       this.depth--;
@@ -30,7 +35,7 @@ export class DbTransactionRunner {
   }
 
   readTransaction<T>(
-    db: DbAdapter,
+    controls: DbTransactionControls,
     fn: () => T,
     logRollbackError: (error: Error) => void,
   ): T {
@@ -38,15 +43,15 @@ export class DbTransactionRunner {
       return this.runNested(fn);
     }
 
-    db.exec("BEGIN DEFERRED");
+    controls.beginRead();
     this.depth++;
     try {
       const result = fn();
-      db.exec("COMMIT");
+      controls.commit();
       return result;
     } catch (err) {
       try {
-        db.exec("ROLLBACK");
+        controls.rollback();
       } catch (rollbackErr) {
         logRollbackError(rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr)));
       }

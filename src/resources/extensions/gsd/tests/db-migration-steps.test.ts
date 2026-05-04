@@ -10,6 +10,12 @@ import {
   applyMigrationV4DecisionMadeBy,
   applyMigrationV5HierarchyTables,
   applyMigrationV8PlanningFields,
+  applyMigrationV11TaskPlanning,
+  applyMigrationV13HotPathIndexes,
+  applyMigrationV15AuditTables,
+  applyMigrationV17TaskEscalation,
+  applyMigrationV18MemorySources,
+  applyMigrationV20MemoryRelations,
 } from "../db-migration-steps.ts";
 
 class FakeStatement implements DbStatement {
@@ -70,5 +76,38 @@ describe("db-migration-steps", () => {
     assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS replan_history")));
     assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS assessments")));
     assert.ok(db.execCalls.some((sql) => sql.includes("CREATE INDEX IF NOT EXISTS idx_replan_history_milestone")));
+  });
+
+  test("mid migrations add task planning, hot-path indexes, and audit tables", () => {
+    const db = new FakeAdapter();
+    let dedupeCalls = 0;
+
+    applyMigrationV11TaskPlanning(db);
+    applyMigrationV13HotPathIndexes(db, () => {
+      dedupeCalls += 1;
+    });
+    applyMigrationV15AuditTables(db);
+
+    assert.equal(dedupeCalls, 1);
+    assert.ok(db.execCalls.some((sql) => sql.includes("ALTER TABLE tasks ADD COLUMN full_plan_md")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE UNIQUE INDEX IF NOT EXISTS idx_replan_history_unique")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE INDEX IF NOT EXISTS idx_tasks_active")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS gate_runs")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS audit_events")));
+  });
+
+  test("late DDL migrations add escalation and memory structures", () => {
+    const db = new FakeAdapter();
+
+    applyMigrationV17TaskEscalation(db);
+    applyMigrationV18MemorySources(db);
+    applyMigrationV20MemoryRelations(db);
+
+    assert.ok(db.execCalls.some((sql) => sql.includes("ALTER TABLE tasks ADD COLUMN escalation_pending")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE INDEX IF NOT EXISTS idx_tasks_escalation_pending")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS memory_sources")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS memory_relations")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE INDEX IF NOT EXISTS idx_memory_relations_from")));
   });
 });
