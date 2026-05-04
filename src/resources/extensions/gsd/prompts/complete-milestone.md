@@ -8,23 +8,23 @@ Your working directory is `{{workingDirectory}}`. All file reads, writes, and sh
 
 ## Your Role in the Pipeline
 
-All slices are done. Close the milestone by verifying the assembled work delivers the promised outcome, writing the milestone summary, and updating project state. The milestone summary is the final record; queued milestones start fresh and learn from it.
+All slices are done. Close the milestone by verifying the assembled work delivers the promised outcome, writing the milestone summary, and updating project state. The summary is the final record; queued milestones start fresh and learn from it.
 
-Preloaded context below includes roadmap, compact slice-summary excerpts, requirements, decisions, and project context. **Slice summaries are excerpts, not full files.** They include frontmatter, section heads (deviations, known limitations, follow-ups), and short narrative only. For LEARNINGS, Decision Re-evaluation, or cross-slice narrative, selectively read full slice SUMMARY.md files listed under "On-demand Slice Summaries".
+Preloaded context includes roadmap, compact slice-summary excerpts, requirements, decisions, and project context. **Slice summaries are excerpts, not full files.** They include frontmatter, section heads (deviations, known limitations, follow-ups), and short narrative only. For LEARNINGS, Decision Re-evaluation, or cross-slice narrative, selectively read full slice SUMMARY.md files listed under "On-demand Slice Summaries".
 
 Start from excerpts; read full files only when section heads show needed context.
 
-**On-demand Read ordering:** Complete needed slice SUMMARY Reads for cross-slice synthesis, Decision Re-evaluation, and LEARNINGS **before** calling `gsd_complete_milestone` (step 10). Once that tool runs, the DB marks the milestone complete; running out of tool budget before LEARNINGS leaves the milestone committed without its LEARNINGS artifact.
+**On-demand Read ordering:** Complete needed slice SUMMARY Reads for cross-slice synthesis, Decision Re-evaluation, and LEARNINGS **before** calling `gsd_complete_milestone` (step 10). Once that tool runs, the DB marks the milestone complete; running out of tool budget before LEARNINGS leaves the milestone without its LEARNINGS artifact.
 
 ### Delegate Review Work
 
 This unit runs under `planning-dispatch`: use `subagent` for review work that benefits from fresh context. For non-trivial milestones, delegate before drafting LEARNINGS:
 
-- **Cross-slice integrations or new public APIs** → dispatch the **reviewer** agent with the milestone diff and roadmap; treat its findings as input to your Decision Re-evaluation and LEARNINGS sections.
-- **Touched auth, network, parsing, file IO, shell exec, or crypto** → dispatch the **security** agent for an OWASP-style audit across the merged slices.
-- **Significant test surface added or changed** → dispatch the **tester** agent to assess coverage gaps relative to the milestone success criteria.
+- **Cross-slice integrations or new public APIs** -> dispatch the **reviewer** agent with milestone diff and roadmap; fold findings into Decision Re-evaluation and LEARNINGS.
+- **Touched auth, network, parsing, file IO, shell exec, or crypto** -> dispatch the **security** agent for an OWASP-style audit across merged slices.
+- **Significant test surface added or changed** -> dispatch the **tester** agent to assess coverage gaps against milestone success criteria.
 
-Subagents read the diff and report findings; they do **not** write user source. Fold feedback into the milestone summary and captured decisions before `gsd_complete_milestone`.
+Subagents read the diff and report findings; they do **not** write user source. Fold feedback into the summary and captured decisions before `gsd_complete_milestone`.
 
 {{inlinedContext}}
 
@@ -34,8 +34,8 @@ Then:
 3. **Verify code changes exist.** Compare the milestone against its integration branch (`main`, `master`, or recorded branch), merge-base as older revision and `HEAD` as newer. If the branch diff lists non-`.gsd/` files, pass. If `HEAD` equals the integration branch/merge-base (retry-on-main self-diff), do **not** treat empty diff as missing code; inspect milestone-scoped commit evidence such as recent `GSD-Unit: {{milestoneId}}` or production `GSD-Task: Sxx/Tyy` trailers whose diff also touches `.gsd/milestones/{{milestoneId}}/`, then check those commits for non-`.gsd/` files. Record a **verification failure** only when neither source shows implementation files.
 4. Verify each **success criterion** from `{{roadmapPath}}` with evidence from slice summaries, tests, or observable behavior. Record unmet criteria as **verification failure**.
 5. Verify **definition of done**: all slices `[x]`, summaries exist, cross-slice integrations work. Record unmet items as **verification failure**.
-6. If the roadmap includes a **Horizontal Checklist**, verify each item was addressed during the milestone. Note unchecked items in the milestone summary.
-7. Fill the **Decision Re-evaluation** table. For each key `.gsd/DECISIONS.md` decision made during this milestone, evaluate whether it still matches what shipped. Flag decisions to revisit next milestone.
+6. If the roadmap includes a **Horizontal Checklist**, verify each item was addressed. Note unchecked items in the summary.
+7. Fill the **Decision Re-evaluation** table. For each key `.gsd/DECISIONS.md` decision from this milestone, evaluate whether it still matches what shipped. Flag decisions to revisit next milestone.
 8. Validate **requirement status transitions**. For each changed requirement, confirm evidence supports the transition. Requirements may move between Active, Validated, Deferred, Blocked, or Out of Scope only with proof.
 
 **DB access safety:** Do NOT query `.gsd/gsd.db` directly via `sqlite3` or `node -e require('better-sqlite3')`; the engine owns the WAL connection. Use `gsd_milestone_status` for milestone/slice state. Use inlined context or `gsd_*` tools, never direct SQL.
