@@ -12,7 +12,9 @@ All slices are complete. Verify the integrated work, persist milestone completio
 
 Preloaded context includes roadmap, requirements, decisions, project context, and compact slice-summary excerpts. Slice summaries are excerpts, not full files: use them first, then selectively read full SUMMARY.md files listed under "On-demand Slice Summaries" only when section headings indicate needed evidence for LEARNINGS, Decision Re-evaluation, deviations, limitations, or cross-slice narrative.
 
-Read any needed full SUMMARY files **before** `gsd_complete_milestone` (step 10). After that call, DB marks the milestone complete; running out of budget before LEARNINGS leaves no LEARNINGS artifact.
+Start with what the excerpts give you. Read full files when the section heads signal richer context you need.
+
+**On-demand Read ordering:** Complete all slice SUMMARY Reads you need for cross-slice synthesis, the Decision Re-evaluation table, and LEARNINGS **before** calling `gsd_complete_milestone` (step 12). Once that tool runs, the milestone is marked complete in the DB, so it must be the final persistent milestone-closeout write.
 
 ### Delegate Review Work
 
@@ -41,7 +43,7 @@ Subagents report only; they do not write user source. Fold findings into Decisio
 
 ### Verification Gate — STOP if verification failed
 
-**If ANY verification failure was recorded in steps 3, 4, or 5, follow the failure path. Do NOT proceed to step 10.**
+**If ANY verification failure was recorded in steps 3, 4, or 5, you MUST follow the failure path below. Do NOT proceed with steps 9–13.**
 
 **Failure path** (verification failed):
 - Do NOT call `gsd_complete_milestone`.
@@ -52,8 +54,13 @@ Subagents report only; they do not write user source. Fold findings into Decisio
 
 **Success path** (all verifications passed):
 
-9. For each requirement whose status changed in step 8, call `gsd_requirement_update` with requirement ID plus updated `status` and `validation`; it regenerates `.gsd/REQUIREMENTS.md`. Do this before milestone completion.
-10. **Persist completion through `gsd_complete_milestone`.** The tool updates DB milestone status, renders `{{milestoneSummaryPath}}`, and validates all slices are complete.
+9. For each requirement whose status changed in step 8, call `gsd_requirement_update` with the requirement ID and updated `status` and `validation` fields — the tool regenerates `.gsd/REQUIREMENTS.md` automatically. Do this BEFORE completing the milestone so requirement updates are persisted.
+10. Update `.gsd/PROJECT.md`: use the `write` tool with `path: ".gsd/PROJECT.md"` and `content` containing the full updated document reflecting milestone completion and current project state. Do NOT use the `edit` tool for this — PROJECT.md is a full-document refresh.
+11. Extract structured learnings from this milestone and persist them to the GSD memory store. Follow the procedure block immediately below — it writes `{{milestoneId}}-LEARNINGS.md` as the audit trail and persists Patterns, Lessons, and Decisions via `capture_thought` (categories: pattern, gotcha/convention, architecture). The memory store is the single source of truth for cross-session durable knowledge (ADR-013).
+
+{{extractLearningsSteps}}
+
+12. **Persist completion through `gsd_complete_milestone`.** Call it with the parameters below. This must be the final persistent write in the unit. The tool updates the milestone status in the DB, renders `{{milestoneSummaryPath}}`, and validates all slices are complete.
 
    **Required parameters:**
    - `milestoneId` (string) — Milestone ID (e.g. M001)
@@ -71,10 +78,6 @@ Subagents report only; they do not write user source. Fold findings into Decisio
    **Optional parameters:**
    - `followUps` (string) — Follow-up items for future milestones
    - `deviations` (string) — Deviations from the original plan
-11. Update `.gsd/PROJECT.md`: use `write` with `path: ".gsd/PROJECT.md"` and full updated `content` reflecting milestone completion/current state. Do NOT use `edit`; PROJECT.md is a full-document refresh.
-12. Extract structured learnings and persist them to the GSD memory store. Follow the procedure below; it writes `{{milestoneId}}-LEARNINGS.md` as audit trail and persists Patterns, Lessons, and Decisions via `capture_thought` (categories: pattern, gotcha/convention, architecture). Memory store is the durable source of truth (ADR-013).
-
-{{extractLearningsSteps}}
 
 13. Do not commit manually — the system auto-commits your changes after this unit completes.
 - Say: "Milestone {{milestoneId}} complete."
