@@ -70,6 +70,7 @@ import {
   decideWorkflowLoop,
   formatDispatchExceptionSummary,
   formatUnhandledDispatchErrorSummary,
+  resolveUnitRequestTimestamp,
   shouldUseCustomEnginePath,
 } from "./workflow-kernel.js";
 import { createWorkflowJournalReporter } from "./workflow-journal-reporter.js";
@@ -643,8 +644,8 @@ export async function autoLoop(
           loopState,
         );
         if (unitPhaseResult.action === "next") {
-          const requestTimestamp = unitPhaseResult.data.requestDispatchedAt ?? unitPhaseResult.data.unitStartedAt;
-          if (typeof requestTimestamp === "number") s.lastRequestTimestamp = requestTimestamp;
+          const requestTimestamp = resolveUnitRequestTimestamp(unitPhaseResult.data);
+          if (requestTimestamp !== undefined) s.lastRequestTimestamp = requestTimestamp;
         }
         phaseReporter.report("unit", unitPhaseResult.action, {
           unitType: iterData.unitType,
@@ -880,8 +881,8 @@ export async function autoLoop(
         throw err;
       }
       if (unitPhaseResult.action === "next") {
-        const requestTimestamp = unitPhaseResult.data.requestDispatchedAt ?? unitPhaseResult.data.unitStartedAt;
-        if (typeof requestTimestamp === "number") s.lastRequestTimestamp = requestTimestamp;
+        const requestTimestamp = resolveUnitRequestTimestamp(unitPhaseResult.data);
+        if (requestTimestamp !== undefined) s.lastRequestTimestamp = requestTimestamp;
       }
       phaseReporter.report("unit", unitPhaseResult.action, {
         unitType: iterData.unitType,

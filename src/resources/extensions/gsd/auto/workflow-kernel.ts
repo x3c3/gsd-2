@@ -126,6 +126,11 @@ export interface CustomEnginePathInput {
   engineBypass: boolean;
 }
 
+export interface UnitRequestTimestampInput {
+  requestDispatchedAt?: number;
+  unitStartedAt?: number;
+}
+
 export interface CustomEngineRecoveryInput {
   outcome: "retry" | "skip" | "stop" | "pause";
   reason?: string;
@@ -417,6 +422,11 @@ export function shouldUseCustomEnginePath(input: CustomEnginePathInput): boolean
     && input.activeEngineId !== "dev"
     && !input.hasSidecarItem
     && !input.engineBypass;
+}
+
+export function resolveUnitRequestTimestamp(input: UnitRequestTimestampInput): number | undefined {
+  const requestTimestamp = input.requestDispatchedAt ?? input.unitStartedAt;
+  return typeof requestTimestamp === "number" ? requestTimestamp : undefined;
 }
 
 export function decideCustomEngineRecovery(

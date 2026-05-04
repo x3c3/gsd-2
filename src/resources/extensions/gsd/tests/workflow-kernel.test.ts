@@ -21,6 +21,7 @@ import {
   decideWorkflowLoop,
   formatDispatchExceptionSummary,
   formatUnhandledDispatchErrorSummary,
+  resolveUnitRequestTimestamp,
   shouldUseCustomEnginePath,
 } from "../auto/workflow-kernel.ts";
 
@@ -429,6 +430,26 @@ test("shouldUseCustomEnginePath enables only non-dev engines without sidecar or 
       engineBypass: true,
     }),
     false,
+  );
+});
+
+test("resolveUnitRequestTimestamp prefers dispatch time and ignores missing timestamps", () => {
+  assert.equal(
+    resolveUnitRequestTimestamp({
+      requestDispatchedAt: 200,
+      unitStartedAt: 100,
+    }),
+    200,
+  );
+  assert.equal(
+    resolveUnitRequestTimestamp({
+      unitStartedAt: 100,
+    }),
+    100,
+  );
+  assert.equal(
+    resolveUnitRequestTimestamp({}),
+    undefined,
   );
 });
 
