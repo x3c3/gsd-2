@@ -359,10 +359,17 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Node.js
+        if: matrix.label != 'windows'
         uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
+
+      - name: Setup Node.js (Windows, no npm cache)
+        if: matrix.label == 'windows'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
 
       - name: Install dependencies
         env:
@@ -376,7 +383,7 @@ jobs:
       - name: Validate managed RTK install
         run: >-
           node --experimental-strip-types --input-type=module -e
-          "const mod = await import('./src/rtk.ts');
+          "const mod = await import('./src/rtk/rtk.ts').catch(() => import('./src/rtk.ts'));
           const result = await mod.ensureRtkAvailable();
           if (!result.available || !result.binaryPath || !mod.validateRtkBinary(result.binaryPath)) {
             console.error('Managed RTK validation failed:', result);
