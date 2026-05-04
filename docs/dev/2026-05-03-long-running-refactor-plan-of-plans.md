@@ -292,6 +292,8 @@ Baseline usage is documented in `docs/dev/refactor-baseline-runbook.md`.
 
 **Exit gate:** 40% prompt-size reduction target is met on representative fixtures with no loss of required sections or acceptance criteria.
 
+**Closeout status (2026-05-04):** Phase 2 source-owned golden fixtures now enforce the exit gate in `src/tests/prompt-golden-fixtures.test.ts`. Representative fixture total dropped from 45,247 chars at the SRC-first Phase 2 start baseline to 16,548 chars, a 63.4% reduction, while retaining required markers for `gsd_plan_slice`, `gsd_task_complete`, `gsd_slice_complete`, verification evidence, blocker handling, and summary sections. The regression gate runs through `npm run baseline:refactor:gate`.
+
 ## Phase 3: Build/Test Speed Plan
 
 **Goal:** Speed up `src` iteration while preserving the full `npm run verify:pr` preflight.

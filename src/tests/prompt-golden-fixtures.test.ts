@@ -8,13 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildCompleteSlicePrompt, buildExecuteTaskPrompt, buildPlanSlicePrompt } from "../resources/extensions/gsd/auto-prompts.ts";
-import { invalidateAllCaches } from "../resources/extensions/gsd/cache.ts";
 import { promptGoldenUnits, type PromptGoldenUnitType } from "./fixtures/prompt-golden-fixtures.ts";
 
 test("prompt golden fixtures render required markers and measurable sizes", async (t) => {
   const base = makePromptFixtureRoot();
   t.after(() => cleanup(base));
+  const { buildCompleteSlicePrompt, buildExecuteTaskPrompt, buildPlanSlicePrompt, invalidateAllCaches } = await loadPromptBuilders(base);
   invalidateAllCaches();
 
   const prompts: Record<PromptGoldenUnitType, string> = {
@@ -35,6 +34,35 @@ test("prompt golden fixtures render required markers and measurable sizes", asyn
   }
 });
 
+test("prompt golden fixtures meet Phase 2 reduction gate", async (t) => {
+  const base = makePromptFixtureRoot();
+  t.after(() => cleanup(base));
+  const { buildCompleteSlicePrompt, buildExecuteTaskPrompt, buildPlanSlicePrompt, invalidateAllCaches } = await loadPromptBuilders(base);
+  invalidateAllCaches();
+
+  const prompts: Record<PromptGoldenUnitType, string> = {
+    "plan-slice": await buildPlanSlicePrompt("M001", "Baseline Milestone", "S01", "Baseline Slice", base, "minimal"),
+    "execute-task": await buildExecuteTaskPrompt("M001", "S01", "Baseline Slice", "T01", "Implement baseline harness", base, "minimal"),
+    "complete-slice": await buildCompleteSlicePrompt("M001", "Baseline Milestone", "S01", "Baseline Slice", base, "minimal"),
+  };
+
+  let baselineChars = 0;
+  let currentChars = 0;
+  for (const fixture of promptGoldenUnits) {
+    const chars = prompts[fixture.unitType].length;
+    baselineChars += fixture.phase2StartChars;
+    currentChars += chars;
+    assert.ok(
+      chars <= Math.floor(fixture.phase2StartChars * 0.6),
+      `${fixture.unitType} should be at least 40% smaller than Phase 2 start baseline (${chars}/${fixture.phase2StartChars})`,
+    );
+  }
+  assert.ok(
+    currentChars <= Math.floor(baselineChars * 0.6),
+    `representative fixtures should be at least 40% smaller in aggregate (${currentChars}/${baselineChars})`,
+  );
+});
+
 test("prompt golden fixtures expose stable unit coverage for future reductions", () => {
   assert.deepEqual(
     promptGoldenUnits.map(unit => unit.unitType),
@@ -52,6 +80,18 @@ function promptMetric(prompt: string): { chars: number; bytes: number; lines: nu
     lines: prompt.length === 0 ? 0 : prompt.split(/\r\n|\r|\n/).length,
     sha256: createHash("sha256").update(prompt).digest("hex"),
   };
+}
+
+async function loadPromptBuilders(base: string): Promise<{
+  buildCompleteSlicePrompt: typeof import("../resources/extensions/gsd/auto-prompts.ts").buildCompleteSlicePrompt;
+  buildExecuteTaskPrompt: typeof import("../resources/extensions/gsd/auto-prompts.ts").buildExecuteTaskPrompt;
+  buildPlanSlicePrompt: typeof import("../resources/extensions/gsd/auto-prompts.ts").buildPlanSlicePrompt;
+  invalidateAllCaches: typeof import("../resources/extensions/gsd/cache.ts").invalidateAllCaches;
+}> {
+  process.env.GSD_HOME = join(base, ".test-gsd-home");
+  const prompts = await import("../resources/extensions/gsd/auto-prompts.ts");
+  const cache = await import("../resources/extensions/gsd/cache.ts");
+  return { ...prompts, invalidateAllCaches: cache.invalidateAllCaches };
 }
 
 function makePromptFixtureRoot(): string {
@@ -120,6 +160,5 @@ function makePromptFixtureRoot(): string {
 }
 
 function cleanup(base: string): void {
-  invalidateAllCaches();
   rmSync(base, { recursive: true, force: true });
 }

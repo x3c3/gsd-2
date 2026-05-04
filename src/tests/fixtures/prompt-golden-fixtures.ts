@@ -4,6 +4,7 @@
 export const promptGoldenUnits = [
   {
     unitType: "plan-slice",
+    phase2StartChars: 19259,
     requiredMarkers: [
       "UNIT: Plan Slice S01",
       "Inlined Context",
@@ -13,6 +14,7 @@ export const promptGoldenUnits = [
   },
   {
     unitType: "execute-task",
+    phase2StartChars: 13576,
     requiredMarkers: [
       "UNIT: Execute Task T01",
       "Inlined Task Plan",
@@ -25,6 +27,7 @@ export const promptGoldenUnits = [
   },
   {
     unitType: "complete-slice",
+    phase2StartChars: 12412,
     requiredMarkers: [
       "UNIT: Complete Slice S01",
       "Inlined Context",
