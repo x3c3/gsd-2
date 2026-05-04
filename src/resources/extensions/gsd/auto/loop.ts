@@ -46,8 +46,6 @@ import { scheduleSidecarQueue } from "../uok/execution-graph.js";
 import { normalizeRealPath } from "../paths.js";
 import {
   decideCooldownRecovery,
-  decideCustomEngineRecovery,
-  decideCustomEngineVerifyRetry,
   decideDispatchClaim,
   decideEngineDispatch,
   decideEngineReconcile,
@@ -87,6 +85,7 @@ import {
   type DispatchContract,
 } from "./workflow-unit-dispatch.js";
 import { buildCustomEngineIterationData } from "./workflow-custom-engine-iteration.js";
+import { handleCustomEngineVerifyRetry } from "./workflow-custom-engine-retry.js";
 
 // ── Stuck detection persistence (#3704) ──────────────────────────────────
 // Phase C migration: stuck-state.json deleted in favor of DB-backed
@@ -507,40 +506,36 @@ export async function autoLoop(
           break;
         }
         if (verifyResult === "retry") {
-          const recoveryKey = `${iterData.unitType}/${iterData.unitId}`;
-          const retryCounts = hydrateCustomVerifyRetryCounts(s, {
-            logFailure: logCustomVerifyRetryLoadFailure,
-          });
-          const attempts = (retryCounts.get(recoveryKey) ?? 0) + 1;
-          retryCounts.set(recoveryKey, attempts);
-          saveCustomVerifyRetryCounts(s, {
-            logFailure: logCustomVerifyRetrySaveFailure,
-          });
-          debugLog("autoLoop", { phase: "custom-engine-verify-retry", iteration, unitId: iterData.unitId, attempts });
-          phaseReporter.report("custom-engine", "retry", {
+          const retryOutcome = await handleCustomEngineVerifyRetry({
+            session: s,
             unitType: iterData.unitType,
             unitId: iterData.unitId,
-            attempts,
-          });
-          const retryDecision = decideCustomEngineVerifyRetry({
-            attempts,
+            basePath: s.basePath,
+            iteration,
             maxRetries: MAX_CUSTOM_ENGINE_VERIFY_RETRIES,
+            deps: {
+              hydrateRetryCounts: () => hydrateCustomVerifyRetryCounts(s, {
+                logFailure: logCustomVerifyRetryLoadFailure,
+              }),
+              saveRetryCounts: () => saveCustomVerifyRetryCounts(s, {
+                logFailure: logCustomVerifyRetrySaveFailure,
+              }),
+              recover: (unitType, unitId, options) => policy.recover(unitType, unitId, options),
+              logRetry: details => debugLog("autoLoop", {
+                phase: "custom-engine-verify-retry",
+                ...details,
+              }),
+              reportRetry: details => phaseReporter.report("custom-engine", "retry", details),
+            },
           });
-          if (retryDecision.action === "recover") {
-            const recovery = await policy.recover(iterData.unitType, iterData.unitId, { basePath: s.basePath });
-            const recoveryDecision = decideCustomEngineRecovery({
-              outcome: recovery.outcome,
-              reason: recovery.reason,
-              unitId: iterData.unitId,
-              attempts,
-            });
-            if (recoveryDecision.action === "pause") {
-              await deps.pauseAuto(ctx, pi);
-              finishTurn("paused", "manual-attention", recoveryDecision.turnError);
-              break;
-            }
-            await deps.stopAuto(ctx, pi, recoveryDecision.stopMessage);
-            finishTurn("stopped", "manual-attention", recoveryDecision.turnError);
+          if (retryOutcome.action === "pause") {
+            await deps.pauseAuto(ctx, pi);
+            finishTurn("paused", "manual-attention", retryOutcome.turnError);
+            break;
+          }
+          if (retryOutcome.action === "stop") {
+            await deps.stopAuto(ctx, pi, retryOutcome.stopMessage);
+            finishTurn("stopped", "manual-attention", retryOutcome.turnError);
             break;
           }
           finishTurn("retry");
