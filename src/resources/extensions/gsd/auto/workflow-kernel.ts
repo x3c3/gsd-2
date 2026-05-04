@@ -147,6 +147,26 @@ export interface InfrastructureErrorDecision {
   failureClass: "execution";
 }
 
+export interface ModelPolicyBlockedInput {
+  unitType: string;
+  unitId: string;
+  errorMessage: string;
+  reasons: ReadonlyArray<{ provider: string; modelId: string; reason: string }>;
+}
+
+export interface ModelPolicyBlockedDecision {
+  notifyMessage: string;
+  journalData: {
+    unitType: string;
+    unitId: string;
+    status: "blocked";
+    reason: "model-policy-dispatch-blocked";
+    reasons: ReadonlyArray<{ provider: string; modelId: string; reason: string }>;
+  };
+  turnStatus: "paused";
+  failureClass: "manual-attention";
+}
+
 export interface WorkflowLoopInput {
   active: boolean;
   iteration: number;
@@ -409,5 +429,21 @@ export function decideInfrastructureError(input: InfrastructureErrorInput): Infr
     stopMessage: `Infrastructure error (${input.code}): not recoverable by retry`,
     turnStatus: "failed",
     failureClass: "execution",
+  };
+}
+
+export function decideModelPolicyBlocked(input: ModelPolicyBlockedInput): ModelPolicyBlockedDecision {
+  return {
+    notifyMessage:
+      `Auto-mode paused: model-policy denied dispatch for ${input.unitType}/${input.unitId}. ${input.errorMessage}`,
+    journalData: {
+      unitType: input.unitType,
+      unitId: input.unitId,
+      status: "blocked",
+      reason: "model-policy-dispatch-blocked",
+      reasons: input.reasons,
+    },
+    turnStatus: "paused",
+    failureClass: "manual-attention",
   };
 }

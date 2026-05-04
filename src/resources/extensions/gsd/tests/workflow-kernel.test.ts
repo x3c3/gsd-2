@@ -15,6 +15,7 @@ import {
   decideInfrastructureError,
   decideIterationErrorRecovery,
   decideMemoryPressure,
+  decideModelPolicyBlocked,
   decideMinRequestInterval,
   decideWorkflowLoop,
 } from "../auto/workflow-kernel.ts";
@@ -465,6 +466,33 @@ test("decideInfrastructureError returns stable stop and notification messages", 
       stopMessage: "Infrastructure error (ENOSPC): not recoverable by retry",
       turnStatus: "failed",
       failureClass: "execution",
+    },
+  );
+});
+
+test("decideModelPolicyBlocked returns pause notification and journal payload", () => {
+  const reasons = [
+    { provider: "provider-a", modelId: "model-a", reason: "tools denied" },
+  ];
+  assert.deepEqual(
+    decideModelPolicyBlocked({
+      unitType: "execute-task",
+      unitId: "M001/S001/T001",
+      errorMessage: "policy blocked",
+      reasons,
+    }),
+    {
+      notifyMessage:
+        "Auto-mode paused: model-policy denied dispatch for execute-task/M001/S001/T001. policy blocked",
+      journalData: {
+        unitType: "execute-task",
+        unitId: "M001/S001/T001",
+        status: "blocked",
+        reason: "model-policy-dispatch-blocked",
+        reasons,
+      },
+      turnStatus: "paused",
+      failureClass: "manual-attention",
     },
   );
 });

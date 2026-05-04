@@ -64,6 +64,7 @@ import {
   decideInfrastructureError,
   decideIterationErrorRecovery,
   decideMemoryPressure,
+  decideModelPolicyBlocked,
   decideMinRequestInterval,
   decideWorkflowLoop,
 } from "./workflow-kernel.js";
@@ -999,6 +1000,12 @@ export async function autoLoop(
       // instead, with the per-model deny reasons surfaced from the typed
       // error.
       if (loopErr instanceof ModelPolicyDispatchBlockedError) {
+        const policyDecision = decideModelPolicyBlocked({
+          unitType: loopErr.unitType,
+          unitId: loopErr.unitId,
+          errorMessage: msg,
+          reasons: loopErr.reasons,
+        });
         debugLog("autoLoop", {
           phase: "model-policy-blocked",
           iteration,
@@ -1006,22 +1013,13 @@ export async function autoLoop(
           unitId: loopErr.unitId,
           reasons: loopErr.reasons,
         });
-        ctx.ui.notify(
-          `Auto-mode paused: model-policy denied dispatch for ${loopErr.unitType}/${loopErr.unitId}. ${msg}`,
-          "error",
-        );
+        ctx.ui.notify(policyDecision.notifyMessage, "error");
         deps.emitJournalEvent({
           ts: new Date().toISOString(),
           flowId,
           seq: nextSeq(),
           eventType: "unit-end",
-          data: {
-            unitType: loopErr.unitType,
-            unitId: loopErr.unitId,
-            status: "blocked",
-            reason: "model-policy-dispatch-blocked",
-            reasons: loopErr.reasons,
-          },
+          data: policyDecision.journalData,
         });
         // Carry the blocked unit identity into the turn-result observer:
         // the throw originated inside dispatch, so observedUnitType/Id were
@@ -1030,7 +1028,7 @@ export async function autoLoop(
         observedUnitType = loopErr.unitType;
         observedUnitId = loopErr.unitId;
         await deps.pauseAuto(ctx, pi);
-        finishTurn("paused", "manual-attention", msg);
+        finishTurn(policyDecision.turnStatus, policyDecision.failureClass, msg);
         // Do NOT increment consecutiveErrors — the failure is configuration,
         // not a transient runtime fault.
         break;
