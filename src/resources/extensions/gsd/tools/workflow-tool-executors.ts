@@ -190,19 +190,63 @@ export async function executeSummarySave(
     );
 
     let registeredMilestones: string[] = [];
-    let registrationWarning: string | undefined;
     if (params.artifact_type === "PROJECT") {
       try {
         registeredMilestones = registerProjectMilestoneSequence(contentToSave);
         if (registeredMilestones.length > 0) invalidateStateCache();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        registrationWarning = `PROJECT artifact saved, but milestone registration failed: ${msg}`;
-        logWarning("tool", registrationWarning, {
+        logError("tool", `gsd_summary_save: PROJECT artifact persisted but milestone registration threw: ${msg}`, {
           tool: "gsd_summary_save",
           error: String(err),
           stack: err instanceof Error ? err.stack ?? "" : "",
         });
+        // PROJECT.md was persisted by saveArtifactToDb above; the artifacts row
+        // changed even though no milestones registered. Invalidate so subsequent
+        // /gsd reads see the persisted artifact instead of the pre-save cache.
+        invalidateStateCache();
+        return {
+          content: [{
+            type: "text",
+            text:
+              `Error: PROJECT.md was saved to ${relativePath} but milestone registration failed: ${msg}. ` +
+              `The DB has no milestone rows for this project, so /gsd will report "No Active Milestone". ` +
+              `Re-call gsd_summary_save(PROJECT) once the underlying error is resolved — INSERT OR IGNORE makes registration idempotent.`,
+          }],
+          details: {
+            operation: "save_summary",
+            path: relativePath,
+            artifact_type: params.artifact_type,
+            error: "milestone_registration_threw",
+            registration_error: msg,
+          },
+          isError: true,
+        };
+      }
+      if (registeredMilestones.length === 0) {
+        logError("tool", `gsd_summary_save: PROJECT.md saved to ${relativePath} but parsed zero milestones — registration produced no DB rows`, {
+          tool: "gsd_summary_save",
+        });
+        // PROJECT.md was persisted; invalidate so subsequent reads see the new
+        // artifacts row even though no milestones registered.
+        invalidateStateCache();
+        return {
+          content: [{
+            type: "text",
+            text:
+              `Error: PROJECT.md was saved to ${relativePath} but contains zero parseable milestone lines, ` +
+              `so no milestones were registered in the DB. /gsd will report "No Active Milestone". ` +
+              `Rewrite PROJECT.md so the "Milestone Sequence" section uses canonical lines: ` +
+              `\`- [ ] M001: <Title> — <One-liner>\` (em-dash, double-dash \`--\`, or single-dash \`-\` separator), then re-call gsd_summary_save(PROJECT).`,
+          }],
+          details: {
+            operation: "save_summary",
+            path: relativePath,
+            artifact_type: params.artifact_type,
+            error: "milestone_registration_empty_parse",
+          },
+          isError: true,
+        };
       }
     }
 
@@ -225,7 +269,6 @@ export async function executeSummarySave(
         artifact_type: params.artifact_type,
         content_source: contentSource,
         ...(registeredMilestones.length > 0 ? { registeredMilestones } : {}),
-        ...(registrationWarning ? { warning: registrationWarning } : {}),
       },
     };
   } catch (err) {

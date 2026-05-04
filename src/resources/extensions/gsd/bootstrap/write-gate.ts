@@ -351,8 +351,9 @@ export function shouldBlockPendingGate(
   toolName: string,
   milestoneId: string | null,
   queuePhaseActive?: boolean,
+  basePath: string = process.cwd(),
 ): { block: boolean; reason?: string } {
-  return shouldBlockPendingGateInSnapshot(currentWriteGateSnapshot(), toolName, milestoneId, queuePhaseActive);
+  return shouldBlockPendingGateInSnapshot(currentWriteGateSnapshot(basePath), toolName, milestoneId, queuePhaseActive);
 }
 
 export function shouldBlockPendingGateInSnapshot(
@@ -386,8 +387,9 @@ export function shouldBlockPendingGateBash(
   command: string,
   milestoneId: string | null,
   queuePhaseActive?: boolean,
+  basePath: string = process.cwd(),
 ): { block: boolean; reason?: string } {
-  return shouldBlockPendingGateBashInSnapshot(currentWriteGateSnapshot(), command, milestoneId, queuePhaseActive);
+  return shouldBlockPendingGateBashInSnapshot(currentWriteGateSnapshot(basePath), command, milestoneId, queuePhaseActive);
 }
 
 export function shouldBlockPendingGateBashInSnapshot(
@@ -444,6 +446,7 @@ export function shouldBlockContextWrite(
   inputPath: string,
   milestoneId: string | null,
   _queuePhaseActive?: boolean,
+  basePath: string = process.cwd(),
 ): { block: boolean; reason?: string } {
   if (toolName !== "write") return { block: false };
   if (!MILESTONE_CONTEXT_RE.test(inputPath)) return { block: false };
@@ -460,7 +463,7 @@ export function shouldBlockContextWrite(
     };
   }
 
-  if (isMilestoneDepthVerified(targetMilestoneId)) return { block: false };
+  if (isMilestoneDepthVerified(targetMilestoneId, basePath)) return { block: false };
 
   return {
     block: true,
@@ -483,8 +486,9 @@ export function shouldBlockContextArtifactSave(
   artifactType: string,
   milestoneId: string | null,
   sliceId?: string | null,
+  basePath: string = process.cwd(),
 ): { block: boolean; reason?: string } {
-  return shouldBlockContextArtifactSaveInSnapshot(currentWriteGateSnapshot(), artifactType, milestoneId, sliceId);
+  return shouldBlockContextArtifactSaveInSnapshot(currentWriteGateSnapshot(basePath), artifactType, milestoneId, sliceId);
 }
 
 export function shouldBlockContextArtifactSaveInSnapshot(

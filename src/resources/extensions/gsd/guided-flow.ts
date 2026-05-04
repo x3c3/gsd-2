@@ -70,6 +70,7 @@ import {
 } from "./preparation.js";
 import { verifyExpectedArtifact } from "./auto-recovery.js";
 import { createWorkspace, scopeMilestone, type MilestoneScope } from "./workspace.js";
+import { getPendingGate, extractDepthVerificationMilestoneId } from "./bootstrap/write-gate.js";
 
 // ─── Re-exports (preserve public API for existing importers) ────────────────
 export {
@@ -410,6 +411,15 @@ export async function checkDeepProjectSetupAfterTurn(
     }
   }
 
+  // R2: a depth-verification gate is still pending — the LLM emitted the
+  // confirmation question (via ask_user_questions or plain chat) but the user
+  // has not approved yet. Returning false keeps the entry in the
+  // pendingDeepProjectSetupMap so the next user message can resume.
+  const pendingGateId = getPendingGate(entry.basePath);
+  if (pendingGateId) {
+    return false;
+  }
+
   return dispatchNextDeepProjectSetupStage(entry);
 }
 
@@ -493,6 +503,25 @@ export function checkAutoStartAfterDiscuss(): boolean {
   const contextFile = existsSync(contextFilePath) ? contextFilePath : null;
   const roadmapFile = existsSync(roadmapFilePath) ? roadmapFilePath : null;
   if (!contextFile && !roadmapFile) return false; // neither artifact yet — keep waiting
+
+  // Gate 1a: a depth-verification gate is still pending for THIS milestone — the
+  // LLM emitted the confirmation question (via ask_user_questions or plain chat)
+  // but the user has not answered yet. Advancing now would skip the gate and
+  // race ahead with unverified context.
+  const basePathForGate = entry.scope.workspace.projectRoot;
+  const pendingGateId = getPendingGate(basePathForGate);
+  if (pendingGateId) {
+    const pendingMilestoneId = extractDepthVerificationMilestoneId(pendingGateId);
+    // Block advancement if the gate is for THIS milestone, OR if it's a
+    // project/requirements gate (no milestone id encoded) for the deep setup flow.
+    const isProjectGate =
+      pendingGateId === "depth_verification_project_confirm" ||
+      pendingGateId === "depth_verification_requirements_confirm" ||
+      pendingGateId === "depth_verification_research_decision_confirm";
+    if (pendingMilestoneId === milestoneId || isProjectGate) {
+      return false;
+    }
+  }
 
   // Gate 1b: Discriminate plan-blocked from discuss-incomplete when the DB row is queued.
   // If the DB is available and the row is still "queued" but CONTEXT.md already exists on
@@ -626,6 +655,24 @@ export function checkAutoStartAfterDiscuss(): boolean {
   // Cleanup: remove discussion manifest after auto-start (only needed during discussion)
   if (existsSync(manifestPath)) {
     try { unlinkSync(manifestPath); } catch (e) { logWarning("guided", `manifest unlink failed: ${(e as Error).message}`); }
+  }
+
+  // R3b: belt-and-suspenders for silent registration failure. The discuss flow
+  // finished and STATE.md exists, but the milestone may never have landed in
+  // the DB. Without this guard, the user sees "Milestone M001 ready." and then
+  // /gsd reports "No Active Milestone".
+  if (isDbAvailable()) {
+    const milestoneRow = getMilestone(milestoneId);
+    if (!milestoneRow) {
+      ctx.ui.notify(
+        `Milestone ${milestoneId}: discuss artifacts on disk but no DB row exists. ` +
+        `PROJECT.md may have failed to register milestones. ` +
+        `Re-save PROJECT.md with canonical "- [ ] M001: Title — One-liner" lines, ` +
+        `then re-run /gsd to recover.`,
+        "error",
+      );
+      return false;
+    }
   }
 
   pendingAutoStartMap.delete(basePath);

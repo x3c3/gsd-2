@@ -188,7 +188,7 @@ export function registerHooks(
     await getEcosystemReadyPromise();
 
     const beforeAgentBasePath = process.cwd();
-    const pendingApprovalGate = getPendingGate();
+    const pendingApprovalGate = getPendingGate(beforeAgentBasePath);
     if (pendingApprovalGate && isExplicitApprovalResponse(event.prompt, pendingApprovalGate)) {
       markApprovalGateVerified(pendingApprovalGate, beforeAgentBasePath);
       const milestoneId = extractDepthVerificationMilestoneId(pendingApprovalGate);
@@ -401,20 +401,22 @@ export function registerHooks(
     // ── Discussion gate enforcement: block tool calls while gate is pending ──
     // If ask_user_questions was called with a gate ID but hasn't been confirmed,
     // block all non-read-only tool calls to prevent the model from skipping gates.
-    if (getPendingGate()) {
+    if (getPendingGate(discussionBasePath)) {
       const milestoneId = await getDiscussionMilestoneIdFor(discussionBasePath);
       if (isToolCallEventType("bash", event)) {
         const bashGuard = shouldBlockPendingGateBash(
           event.input.command,
           milestoneId,
-          isQueuePhaseActive(),
+          isQueuePhaseActive(discussionBasePath),
+          discussionBasePath,
         );
         if (bashGuard.block) return bashGuard;
       } else {
         const gateGuard = shouldBlockPendingGate(
           toolName,
           milestoneId,
-          isQueuePhaseActive(),
+          isQueuePhaseActive(discussionBasePath),
+          discussionBasePath,
         );
         if (gateGuard.block) return gateGuard;
       }
@@ -424,7 +426,7 @@ export function registerHooks(
     // When /gsd queue is active, the agent should only create milestones,
     // not execute work. Block write/edit to non-.gsd/ paths and bash commands
     // that would modify files.
-    if (isQueuePhaseActive()) {
+    if (isQueuePhaseActive(discussionBasePath)) {
       let queueInput = "";
       if (isToolCallEventType("write", event)) {
         queueInput = event.input.path;
@@ -498,7 +500,8 @@ export function registerHooks(
       event.toolName,
       event.input.path,
       await getDiscussionMilestoneIdFor(discussionBasePath),
-      isQueuePhaseActive(),
+      isQueuePhaseActive(discussionBasePath),
+      discussionBasePath,
     );
     if (result.block) return result;
   });
@@ -558,7 +561,7 @@ export function registerHooks(
     if (toolName !== "ask_user_questions") return;
     const basePath = process.cwd();
     const milestoneId = await getDiscussionMilestoneIdFor(basePath);
-    const queueActive = isQueuePhaseActive();
+    const queueActive = isQueuePhaseActive(basePath);
 
     const details = event.details as any;
 
@@ -568,7 +571,7 @@ export function registerHooks(
     // If the user responded at all (even "needs adjustment"), clear the pending gate
     // because the user engaged — the prompt handles the re-ask-after-adjustment flow.
     const questions: any[] = (event.input as any)?.questions ?? [];
-    const currentPendingGate = getPendingGate();
+    const currentPendingGate = getPendingGate(basePath);
     if (currentPendingGate) {
       if (details?.cancelled || !details?.response) {
         // Gate stays pending. Direct the agent to the most reliable recovery
