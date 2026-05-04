@@ -85,7 +85,7 @@ export function buildNodeTestArgs(testFiles) {
   ];
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = {
     files: [],
     list: false,
@@ -96,10 +96,12 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === '--list') {
       options.list = true;
-    } else if (arg === '--base') {
+    } else if (arg === '--base' || arg === '--since') {
       options.base = argv[++i] ?? options.base;
     } else if (arg.startsWith('--base=')) {
       options.base = arg.slice('--base='.length);
+    } else if (arg.startsWith('--since=')) {
+      options.base = arg.slice('--since='.length);
     } else if (arg === '--files') {
       options.files.push(...splitFileList(argv[++i] ?? ''));
     } else if (arg.startsWith('--files=')) {

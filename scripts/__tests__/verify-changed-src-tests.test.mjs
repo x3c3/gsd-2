@@ -9,6 +9,7 @@ import {
   candidateTestsForSource,
   isSourceCandidate,
   isTestFile,
+  parseArgs,
   selectChangedSrcTests,
 } from '../verify-changed-src-tests.mjs';
 
@@ -76,4 +77,16 @@ test('buildNodeTestArgs keeps the shared TypeScript loader', () => {
       'dist-test/src/tests/token-counter.test.js',
     ],
   );
+});
+
+test('parseArgs treats --since as a base revision alias', () => {
+  assert.deepEqual(
+    parseArgs(['--since', 'HEAD~2', '--files', 'src/token-counter.ts,src/tests/token-counter.test.ts']),
+    {
+      files: ['src/token-counter.ts', 'src/tests/token-counter.test.ts'],
+      list: false,
+      base: 'HEAD~2',
+    },
+  );
+  assert.equal(parseArgs(['--since=origin/main']).base, 'origin/main');
 });
