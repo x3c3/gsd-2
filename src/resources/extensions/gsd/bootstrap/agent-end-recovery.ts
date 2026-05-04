@@ -56,6 +56,19 @@ function resolveAgentEndBasePath(): string | undefined {
   }
 }
 
+export function _buildAbortedPauseContext(lastMsg: { errorMessage?: unknown }): {
+  message: string;
+  category: "aborted";
+  isTransient: true;
+} {
+  const hasErrorMessage = Object.prototype.hasOwnProperty.call(lastMsg, "errorMessage") && !!lastMsg.errorMessage;
+  return {
+    message: hasErrorMessage ? String(lastMsg.errorMessage) : "Operation aborted",
+    category: "aborted",
+    isTransient: true,
+  };
+}
+
 async function pauseTransientWithBackoff(
   cls: ErrorClass,
   pi: ExtensionAPI,
@@ -159,7 +172,7 @@ export async function handleAgentEnd(
       return;
     }
 
-    await pauseAuto(ctx, pi);
+    await pauseAuto(ctx, pi, _buildAbortedPauseContext(lastMsg as { errorMessage?: unknown }));
     return;
   }
   if (lastMsg && "stopReason" in lastMsg && lastMsg.stopReason === "error") {

@@ -232,6 +232,33 @@ async function emitCancelledUnitEnd(
   });
 }
 
+export function _buildCancelledUnitStopReason(
+  unitType: string,
+  unitId: string,
+  errorContext?: { message: string; category: string },
+): {
+  notifyMessage: string;
+  stopReason: string;
+  loopReason: "session-failed" | "unit-aborted";
+} {
+  const cancellationMessage = errorContext?.message ?? "unknown";
+  const isSessionCreationFailure = errorContext?.category === "session-failed";
+
+  if (isSessionCreationFailure) {
+    return {
+      notifyMessage: `Session creation failed for ${unitType} ${unitId}: ${cancellationMessage}. Stopping auto-mode.`,
+      stopReason: `Session creation failed: ${cancellationMessage}`,
+      loopReason: "session-failed",
+    };
+  }
+
+  return {
+    notifyMessage: `Unit ${unitType} ${unitId} aborted after dispatch: ${cancellationMessage}. Stopping auto-mode.`,
+    stopReason: `Unit aborted: ${cancellationMessage}`,
+    loopReason: "unit-aborted",
+  };
+}
+
 async function failClosedOnFinalizeTimeout(
   ic: IterationContext,
   iterData: IterationData,
@@ -994,7 +1021,10 @@ export async function runDispatch(
     // See: https://github.com/gsd-build/gsd-2/issues/2474
     if (dispatchResult.level === "warning") {
       ctx.ui.notify(dispatchResult.reason, "warning");
-      await deps.pauseAuto(ctx, pi);
+      await deps.pauseAuto(ctx, pi, {
+        message: dispatchResult.reason,
+        category: "unknown",
+      });
     } else {
       await closeoutAndStop(ctx, pi, s, deps, dispatchResult.reason);
     }
@@ -1871,13 +1901,16 @@ export async function runUnitPhase(
     }
     await deps.autoCommitUnit?.(s.basePath, unitType, unitId, ctx);
     await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
-    ctx.ui.notify(
-      `Session creation failed for ${unitType} ${unitId}: ${unitResult.errorContext?.message ?? "unknown"}. Stopping auto-mode.`,
-      "warning",
+
+    const cancelledStop = _buildCancelledUnitStopReason(
+      unitType,
+      unitId,
+      unitResult.errorContext,
     );
-    await deps.stopAuto(ctx, pi, `Session creation failed: ${unitResult.errorContext?.message ?? "unknown"}`);
-    debugLog("autoLoop", { phase: "exit", reason: "session-failed" });
-    return { action: "break", reason: "session-failed" };
+    ctx.ui.notify(cancelledStop.notifyMessage, "warning");
+    await deps.stopAuto(ctx, pi, cancelledStop.stopReason);
+    debugLog("autoLoop", { phase: "exit", reason: cancelledStop.loopReason });
+    return { action: "break", reason: cancelledStop.loopReason };
   }
 
   // ── Immediate unit closeout (metrics, activity log, memory) ────────
