@@ -6,37 +6,36 @@ You are executing GSD auto-mode.
 
 Your working directory is `{{workingDirectory}}`. All file reads, writes, and shell commands MUST operate relative to this directory. Do NOT `cd` to any other directory.
 
-## Your Role in the Pipeline
+## Mission
 
-All slices are done. Close the milestone by verifying the assembled work delivers the promised outcome, writing the milestone summary, and updating project state. The summary is the final record for future milestones.
+All slices are complete. Verify the integrated work, persist milestone completion, refresh project state, and write the final record future milestones will rely on.
 
-Preloaded context includes roadmap, compact slice-summary excerpts, requirements, decisions, and project context. **Slice summaries are excerpts, not full files.** They include frontmatter, section heads (deviations, known limitations, follow-ups), and short narrative only. For LEARNINGS, Decision Re-evaluation, or cross-slice narrative, selectively read full SUMMARY.md files listed under "On-demand Slice Summaries".
+Preloaded context includes roadmap, requirements, decisions, project context, and compact slice-summary excerpts. Slice summaries are excerpts, not full files: use them first, then selectively read full SUMMARY.md files listed under "On-demand Slice Summaries" only when section headings indicate needed evidence for LEARNINGS, Decision Re-evaluation, deviations, limitations, or cross-slice narrative.
 
-Start from excerpts; read full files only when section heads show needed context.
-
-**On-demand Read ordering:** Read needed slice SUMMARY files for cross-slice synthesis, Decision Re-evaluation, and LEARNINGS **before** `gsd_complete_milestone` (step 10). Once that tool runs, DB marks the milestone complete; running out of tool budget before LEARNINGS leaves no LEARNINGS artifact.
+Read any needed full SUMMARY files **before** `gsd_complete_milestone` (step 10). After that call, DB marks the milestone complete; running out of budget before LEARNINGS leaves no LEARNINGS artifact.
 
 ### Delegate Review Work
 
-This unit runs under `planning-dispatch`: use `subagent` for review work needing fresh context. For non-trivial milestones, delegate before drafting LEARNINGS:
+Use `subagent` for review work needing fresh context, before drafting LEARNINGS:
 
-- **Cross-slice integrations or new public APIs** -> dispatch the **reviewer** agent with milestone diff and roadmap; fold findings into Decision Re-evaluation and LEARNINGS.
-- **Touched auth, network, parsing, file IO, shell exec, or crypto** -> dispatch the **security** agent for an OWASP-style audit across merged slices.
-- **Significant test surface added or changed** -> dispatch the **tester** agent to assess coverage gaps against milestone success criteria.
+- Cross-slice integrations or new public APIs -> **reviewer** with milestone diff and roadmap.
+- Auth, network, parsing, file IO, shell exec, or crypto -> **security** audit.
+- Significant tests added or changed -> **tester** coverage check against success criteria.
 
-Subagents read the diff and report findings; they do **not** write user source. Fold feedback into the summary and decisions before `gsd_complete_milestone`.
+Subagents report only; they do not write user source. Fold findings into Decision Re-evaluation and LEARNINGS before completion.
 
 {{inlinedContext}}
 
-Then:
+## Steps
+
 1. Use the **Milestone Summary** output template from the inlined context above
 2. {{skillActivation}}
-3. **Verify code changes exist.** Compare the milestone against its integration branch (`main`, `master`, or recorded branch), using merge-base as older revision and `HEAD` as newer. If the branch diff lists non-`.gsd/` files, pass. If `HEAD` equals the integration branch/merge-base, inspect milestone-scoped commit evidence (`GSD-Unit: {{milestoneId}}` or production `GSD-Task: Sxx/Tyy` trailers touching `.gsd/milestones/{{milestoneId}}/`) and check those commits for non-`.gsd/` files. Record **verification failure** only when neither source shows implementation files.
-4. Verify each **success criterion** from `{{roadmapPath}}` with evidence from summaries, tests, or observable behavior. Record unmet criteria as **verification failure**.
-5. Verify **definition of done**: all slices `[x]`, summaries exist, integrations work. Record unmet items as **verification failure**.
-6. If the roadmap includes a **Horizontal Checklist**, verify each item was addressed. Note unchecked items in the summary.
-7. Fill the **Decision Re-evaluation** table. For each key `.gsd/DECISIONS.md` decision from this milestone, evaluate whether it still matches what shipped. Flag decisions to revisit next milestone.
-8. Validate **requirement status transitions**. For each changed requirement, confirm evidence supports the transition. Requirements may move between Active, Validated, Deferred, Blocked, or Out of Scope only with proof.
+3. **Verify code changes exist.** Compare milestone work against the integration branch (`main`, `master`, or recorded branch), using merge-base as older revision and `HEAD` as newer. If the diff lists non-`.gsd/` files, pass. If `HEAD` equals the integration branch/merge-base, treat it as a self-diff retry: inspect milestone-scoped commit evidence (`GSD-Unit: {{milestoneId}}` or production `GSD-Task: Sxx/Tyy` trailers touching `.gsd/milestones/{{milestoneId}}/`) and verify those commits touched non-`.gsd/` files. Record **verification failure** only when neither source shows implementation files.
+4. Verify every **success criterion** from `{{roadmapPath}}` with evidence from summaries, tests, or observable behavior. Record unmet criteria as **verification failure**.
+5. Verify **definition of done**: all slices `[x]`, summaries exist, and integrations work. Record unmet items as **verification failure**.
+6. If the roadmap includes a **Horizontal Checklist**, verify each item and note unchecked items in the summary.
+7. Fill the **Decision Re-evaluation** table: compare each key `.gsd/DECISIONS.md` decision from this milestone with what shipped, and flag decisions to revisit.
+8. Validate **requirement status transitions**. For each changed requirement, confirm evidence supports the new status. Requirements may move between Active, Validated, Deferred, Blocked, or Out of Scope only with proof.
 
 **DB access safety:** Do NOT query `.gsd/gsd.db` directly via `sqlite3` or `node -e require('better-sqlite3')`; the engine owns the WAL connection. Use `gsd_milestone_status`, inlined context, or `gsd_*` tools; never direct SQL.
 
@@ -51,9 +50,9 @@ Then:
 - Write a clear failed-verification summary for the next attempt.
 - Say: "Milestone {{milestoneId}} verification FAILED — not complete." and stop.
 
-**Success path** (all verifications passed — continue with steps 9–13):
+**Success path** (all verifications passed):
 
-9. For each requirement whose status changed in step 8, call `gsd_requirement_update` with requirement ID plus updated `status` and `validation`; it regenerates `.gsd/REQUIREMENTS.md`. Do this BEFORE milestone completion.
+9. For each requirement whose status changed in step 8, call `gsd_requirement_update` with requirement ID plus updated `status` and `validation`; it regenerates `.gsd/REQUIREMENTS.md`. Do this before milestone completion.
 10. **Persist completion through `gsd_complete_milestone`.** The tool updates DB milestone status, renders `{{milestoneSummaryPath}}`, and validates all slices are complete.
 
    **Required parameters:**
@@ -73,13 +72,13 @@ Then:
    - `followUps` (string) — Follow-up items for future milestones
    - `deviations` (string) — Deviations from the original plan
 11. Update `.gsd/PROJECT.md`: use `write` with `path: ".gsd/PROJECT.md"` and full updated `content` reflecting milestone completion/current state. Do NOT use `edit`; PROJECT.md is a full-document refresh.
-12. Extract structured learnings and persist them to the GSD memory store. Follow the procedure below; it writes `{{milestoneId}}-LEARNINGS.md` as audit trail and persists Patterns, Lessons, and Decisions via `capture_thought` (categories: pattern, gotcha/convention, architecture). Memory store is durable source of truth (ADR-013).
+12. Extract structured learnings and persist them to the GSD memory store. Follow the procedure below; it writes `{{milestoneId}}-LEARNINGS.md` as audit trail and persists Patterns, Lessons, and Decisions via `capture_thought` (categories: pattern, gotcha/convention, architecture). Memory store is the durable source of truth (ADR-013).
 
 {{extractLearningsSteps}}
 
 13. Do not commit manually — the system auto-commits your changes after this unit completes.
 - Say: "Milestone {{milestoneId}} complete."
 
-**Important:** Do NOT skip code-change, success-criteria, or definition-of-done verification (steps 3-5). The summary must reflect verified outcomes. Verification failures BLOCK completion; there is no override. If a verification tool fails, errors, or returns unexpected output, treat it as failure.
+**Important:** Do NOT skip code-change, success-criteria, or definition-of-done verification (steps 3-5). The summary must reflect verified outcomes. Verification failures block completion; there is no override. If a verification tool fails, errors, or returns unexpected output, treat it as failure.
 
 **File system safety:** When scanning milestone directories for evidence, use `ls` or `find` first. Never pass a directory path (e.g. `tasks/`, `slices/`) to `read`; it only accepts file paths.
