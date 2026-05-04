@@ -6,9 +6,9 @@ Drafts are milestones that were identified during a prior multi-milestone discus
 
 Before asking "What do you want to add?", check the existing milestones context below. If any milestone is marked **"Draft context available"**, surface these drafts to the user first:
 
-1. Tell the user which milestones have draft contexts and briefly summarize what each draft contains (read the draft file).
+1. Tell the user which milestones have draft contexts and summarize each one after reading it.
 2. Use `ask_user_questions` to ask per-draft milestone:
-   - **"Discuss now"** — Treat this draft as the primary topic. Read the draft content, use it as seed material, and conduct a focused discussion following the standard discussion flow (reflection → investigation → questioning → depth verification → requirements → roadmap). After the discussion, call `gsd_summary_save` with the milestone ID and `artifact_type: "CONTEXT"` to write the full context — then delete the `CONTEXT-DRAFT.md` file. The milestone is then ready for auto-planning.
+   - **"Discuss now"** — Treat this draft as the primary topic. Use it as seed material and run the standard discussion flow (reflection → investigation → questioning → depth verification → requirements → roadmap). Then call `gsd_summary_save` with `artifact_type: "CONTEXT"` and delete `CONTEXT-DRAFT.md`.
    - **"Leave for later"** — Keep the draft as-is. The user will discuss it in a future session. Auto-mode will continue to pause when it reaches this milestone.
 3. Handle all draft discussions before proceeding to new queue work.
 4. If no drafts exist in the context, skip this section entirely and proceed to "What do you want to add?"
@@ -20,15 +20,15 @@ Say exactly: "What do you want to add?" — nothing else. Wait for the user's an
 After they describe it, your job is to understand the new work deeply enough to create context files that a future planning session can use.
 Never fabricate or simulate user input during this discussion. Never generate fake transcript markers like `[User]`, `[Human]`, or `User:`. Ask one question round, then wait for the user's actual response before continuing.
 
-**If the user provides a file path or pastes a large document** (spec, design doc, product plan, chat export), read it fully before asking questions. Use it as the starting point — don't ask them to re-explain what's already in the document. Your questions should fill gaps and resolve ambiguities the document doesn't cover.
+**If the user provides a file path or large document**, read it fully before asking questions. Use it as the starting point; ask only for gaps or ambiguities.
 
-**Investigate between question rounds to make your questions smarter.** Before each round of questions, do enough lightweight research that your questions are grounded in reality — not guesses about what exists or what's possible.
+**Investigate between question rounds.** Do enough lightweight research that questions reflect reality, not guesses:
 
-- Check library docs (`resolve_library` / `get_library_docs`) when the user mentions tech you need current facts about — capabilities, constraints, API shapes, version-specific behavior
-- Do web searches (`search-the-web`) to verify the landscape — what solutions exist, what's changed recently, what's the current best practice. Use `freshness` for recency-sensitive queries, `domain` to target specific sites. Use `fetch_page` to read the full content of promising URLs when snippets aren't enough. **Budget:** You have a limited number of web searches per turn (typically 3-5). Prefer `resolve_library` / `get_library_docs` for library documentation and `search_and_read` for one-shot topic research. Do NOT repeat the same or similar queries. Distribute searches across turns rather than clustering them.
-- Scout the codebase (`ls`, `find`, `rg`, or `scout` for broad unfamiliar areas) to understand what already exists, what patterns are established, what constraints current code imposes
+- Use `resolve_library` / `get_library_docs` for unfamiliar tech.
+- Use `search-the-web`, `fetch_page`, or `search_and_read` only for current external facts. Budget 3-5 searches per turn; avoid repeated queries.
+- Scout the codebase with `ls`, `find`, `rg`, or `scout` for existing patterns and constraints.
 
-Don't go deep — just enough that your next question reflects what's actually true rather than what you assume.
+Stay shallow enough to keep the conversation moving.
 
 **Use this to actively surface:**
 - The biggest technical unknowns — what could fail, what hasn't been proven, what might invalidate the plan
@@ -41,7 +41,7 @@ Don't go deep — just enough that your next question reflects what's actually t
 
 If a `GSD Skill Preferences` block is present in system context, use it to decide which skills to load and follow during discuss/planning work, but do not let it override the required discuss flow or artifact requirements.
 
-**Self-regulate:** Do **not** ask a meta "ready to queue?" question after every round. Keep going until you have enough depth to write the context well, then use a single wrap-up prompt if needed. Do not infer permission to continue from silence or from partial prior answers — each new round requires an actual user response.
+**Self-regulate:** Do not ask a meta "ready to queue?" question after every round. Continue until you have enough depth, then use one wrap-up prompt if needed. Never infer permission from silence or partial prior answers.
 
 ## Existing Milestone Awareness
 
@@ -49,10 +49,10 @@ If a `GSD Skill Preferences` block is present in system context, use it to decid
 
 Before writing anything, assess the new work against what already exists:
 
-1. **Dedup check** — Is this already covered (fully or partially) by an existing milestone? If so, tell the user and explain what's already planned. Don't create duplicate milestones.
-2. **Extension check** — Should this be added to an existing *pending* (not yet started) milestone rather than creating a new one? If the scope naturally belongs with existing pending work, propose extending that milestone's context instead.
-3. **Dependency check** — Does the new work depend on something that's currently in progress or planned? Note the dependency so context files capture it.
-4. **Requirement check** — If `.gsd/REQUIREMENTS.md` exists, identify whether this queued work advances unmet Active requirements, promotes Deferred work, or introduces entirely new scope that should also update the requirement contract.
+1. **Dedup check** — If already covered, explain what is planned and do not create duplicates.
+2. **Extension check** — If it belongs in an existing pending milestone, propose extending that context.
+3. **Dependency check** — Capture dependencies on in-progress or planned work.
+4. **Requirement check** — If `.gsd/REQUIREMENTS.md` exists, note Active/Deferred requirements advanced or new scope requiring contract updates.
 
 If the new work is already fully covered, say so and stop — don't create anything.
 
@@ -60,7 +60,7 @@ If the new work is already fully covered, say so and stop — don't create anyth
 
 Before writing artifacts, assess whether this is **single-milestone** or **multi-milestone** scope.
 
-**Single milestone** if the work is one coherent body of deliverables that fits in roughly 2-12 slices.
+**Single milestone**: one coherent body of deliverables that fits roughly 2-12 slices.
 
 **Multi-milestone** if:
 - The work has natural phase boundaries
@@ -82,10 +82,10 @@ Before writing ANY CONTEXT.md file, you MUST complete these verification steps. 
 
 For EACH milestone you are about to write context for, investigate the codebase to verify your technical assumptions:
 
-1. **Read the actual code** — for every file or module you reference in "Existing Codebase / Prior Art", read enough to confirm your assumptions about what exists, what it does, and what it doesn't do. Do not guess from memory or training data.
-2. **Check for stale assumptions** — the codebase may have changed since the user's spec was written. Verify: do the APIs you reference still exist? Have modules been refactored? Has upstream merged features that change the landscape?
-3. **Identify phantom capabilities** — for every capability you list as "existing," confirm it actually works as described. Look for: functions that exist but are never called, fields that are set but never read, features that are piped but never connected.
-4. **Note what you found** — include verified findings in the context file's "Existing Codebase / Prior Art" section with annotations like "verified against current codebase state" or an actual concrete version/commit only if you truly have one.
+1. Read enough actual code for every referenced file/module to confirm what exists and what does not.
+2. Check stale assumptions: APIs, refactors, and upstream changes.
+3. Identify phantom capabilities: unused functions, unread fields, or disconnected pipelines.
+4. Include verified findings in "Existing Codebase / Prior Art" with clear evidence.
 
 ### Step 2: Per-Milestone Depth Verification
 
@@ -104,20 +104,20 @@ The user confirms or corrects before you write. One depth verification per miles
 
 **If you skip this step, the system will block the CONTEXT.md write and return an error telling you to complete verification first.**
 
-**CRITICAL — Non-bypassable gate:** The system mechanically blocks CONTEXT.md writes until the user selects the "(Recommended)" option. If the user declines, cancels, or the tool fails, you MUST re-ask — never rationalize past the block ("tool not responding, I'll proceed" is forbidden). The gate exists to protect the user's work; treat a block as an instruction, not an obstacle to work around.
+**CRITICAL — Non-bypassable gate:** CONTEXT.md writes are blocked until the user selects the "(Recommended)" option. If they decline, cancel, or the tool fails, re-ask. Treat the block as an instruction.
 
 ## Output Phase
 
 Once the user is satisfied, in a single pass for **each** new milestone:
 
-1. Call `gsd_milestone_generate_id` to get the milestone ID — never invent milestone IDs manually. Then `mkdir -p .gsd/milestones/<ID>/slices`.
-2. Call `gsd_summary_save` with `milestone_id: <ID>`, `artifact_type: "CONTEXT"`, and the full context markdown as `content` — the tool computes the file path and persists to both DB and disk. Capture intent, scope, risks, constraints, integration points, and relevant requirements in the content. Mark the status as "Queued — pending auto-mode execution." **If this milestone depends on other milestones, include YAML frontmatter with `depends_on` in the content:**
+1. Call `gsd_milestone_generate_id`; never invent IDs. Then `mkdir -p .gsd/milestones/<ID>/slices`.
+2. Call `gsd_summary_save` with `artifact_type: "CONTEXT"` and full context markdown. The tool computes the path and persists DB + disk. Capture intent, scope, risks, constraints, integration points, and requirements. Mark status "Queued — pending auto-mode execution." **If dependent, include YAML frontmatter:**
    ```yaml
    ---
    depends_on: [M001, M002]
    ---
    ```
-   The auto-mode state machine reads this field to enforce execution order. Without it, milestones may execute out of order. List the exact milestone IDs (including any suffix like `-0zjrg0`) from the dependency chain discussed with the user.
+   Auto-mode reads this to enforce order. List exact milestone IDs, including suffixes.
 
 Then, after all milestone directories and context files are written:
 
