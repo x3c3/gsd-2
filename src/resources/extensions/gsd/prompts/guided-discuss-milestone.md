@@ -51,7 +51,7 @@ After each answer, investigate only new unknowns, then ask the next round.
 
 After each answer round, decide whether the context would be strong enough.
 
-- **Incremental persistence:** After every 2 question rounds, silently save `{{milestoneId}}-CONTEXT-DRAFT.md` via `gsd_summary_save` with `artifact_type: "CONTEXT-DRAFT"`. Do NOT mention this invisible bookkeeping. The final context overwrites it.
+- **Incremental persistence:** After every 2 question rounds, silently save `{{milestoneId}}-CONTEXT-DRAFT.md` via `gsd_summary_save` with `artifact_type: "CONTEXT-DRAFT"`. Do NOT mention this save to the user. The final context overwrites it.
 - If not ready, investigate new unknowns and continue. Do **not** ask a meta "ready to wrap up?" question after every round.
 - Use one wrap-up prompt only when the depth checklist is satisfied or the user wants to stop.
 - **If `{{structuredQuestionsAvailable}}` is `true` and you need that wrap-up prompt:** use `ask_user_questions` with options:
