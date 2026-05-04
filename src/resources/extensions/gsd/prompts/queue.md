@@ -4,13 +4,13 @@
 
 Drafts are milestones from earlier multi-milestone discussion where the user chose "Needs own discussion" instead of "Ready for auto-planning." `CONTEXT-DRAFT.md` captures seed ideas, provisional scope, and open questions.
 
-Before asking "What do you want to add?", check the existing milestones context below. If any milestone is marked **"Draft context available"**, surface these drafts to the user first:
+Before asking "What do you want to add?", check existing milestone context. If any milestone is marked **"Draft context available"**, surface drafts first:
 
 1. Tell the user which milestones have draft contexts and summarize each after reading it.
 2. Use `ask_user_questions` to ask per-draft milestone:
-   - **"Discuss now"** — Treat the draft as primary topic. Run reflection -> investigation -> questioning -> depth verification -> requirements -> roadmap, call `gsd_summary_save` with `artifact_type: "CONTEXT"`, then delete `CONTEXT-DRAFT.md`.
-   - **"Leave for later"** — Keep the draft as-is for a future session. Auto-mode will keep pausing when it reaches this milestone.
-3. Handle all draft discussions before proceeding to new queue work.
+   - **"Discuss now"** — Treat the draft as primary topic. Run reflection -> investigation -> questions -> depth verification -> requirements -> roadmap, call `gsd_summary_save` with `artifact_type: "CONTEXT"`, then delete `CONTEXT-DRAFT.md`.
+   - **"Leave for later"** — Keep the draft. Auto-mode will keep pausing when it reaches this milestone.
+3. Resolve all draft discussions before new queue work.
 4. If no drafts exist in the context, skip this section entirely and proceed to "What do you want to add?"
 
 Say exactly: "What do you want to add?" — nothing else. Wait for the user's answer.
@@ -22,20 +22,13 @@ Never fabricate or simulate user input during this discussion. Never emit `[User
 
 **If the user provides a file path or large document**, read it fully first. Ask only for gaps or ambiguities.
 
-**Investigate between question rounds.** Do lightweight research so questions reflect reality:
+**Investigate between question rounds.** Keep research light and reality-based:
 
 - Use `resolve_library` / `get_library_docs` for unfamiliar tech.
-- Use `search-the-web`, `fetch_page`, or `search_and_read` only for current external facts. Budget 3-5 searches per turn; avoid repeats.
-- Scout the codebase with `ls`, `find`, `rg`, or `scout` for existing patterns and constraints.
+- Use `search-the-web`, `fetch_page`, or `search_and_read` only for current external facts; budget 3-5 searches per turn.
+- Scout code with `ls`, `find`, `rg`, or `scout`.
 
-Stay shallow enough to keep the conversation moving.
-
-**Use this to actively surface:**
-- Technical unknowns that could fail or invalidate the plan.
-- Integration surfaces: external systems, APIs, libraries, and internal modules.
-- Proof needed before committing.
-- Overlap, dependencies, or prerequisites with existing milestones.
-- If `.gsd/REQUIREMENTS.md` exists: unmet Active or Deferred requirements advanced by this work.
+Surface technical unknowns, integration surfaces, proof needed before committing, milestone overlap/dependencies, and any Active/Deferred `.gsd/REQUIREMENTS.md` items advanced by this work.
 
 **Then use ask_user_questions** for gray areas: scope boundaries, proof expectations, integration choices, material tech preferences, and in/out scope. Ask 1-3 questions per round, then wait for the user's response before asking the next round.
 
@@ -49,10 +42,10 @@ If a `GSD Skill Preferences` block exists, use it to choose skills during discus
 
 Before writing, assess new work against existing milestones:
 
-1. **Dedup check** — If already covered, explain what is planned and do not create duplicates.
-2. **Extension check** — If it belongs in an existing pending milestone, propose extending that context.
+1. **Dedup check** — If covered, explain what is planned and do not duplicate it.
+2. **Extension check** — If it belongs in a pending milestone, propose extending that context.
 3. **Dependency check** — Capture dependencies on in-progress or planned work.
-4. **Requirement check** — If `.gsd/REQUIREMENTS.md` exists, note advanced Active/Deferred requirements or new scope needing contract updates.
+4. **Requirement check** — If `.gsd/REQUIREMENTS.md` exists, note advanced Active/Deferred requirements or new contract scope.
 
 If the new work is already fully covered, say so and stop; do not create duplicates.
 
@@ -60,7 +53,7 @@ If the new work is already fully covered, say so and stop; do not create duplica
 
 Before writing artifacts, classify scope as **single-milestone** or **multi-milestone**.
 
-**Single milestone**: one coherent deliverable set that fits roughly 2-12 slices.
+**Single milestone**: one coherent deliverable set, roughly 2-12 slices.
 
 **Multi-milestone** if:
 - The work has natural phase boundaries
