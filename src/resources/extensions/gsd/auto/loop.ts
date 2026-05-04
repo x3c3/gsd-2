@@ -73,6 +73,10 @@ import {
   resolveUnitRequestTimestamp,
   shouldUseCustomEnginePath,
 } from "./workflow-kernel.js";
+import {
+  settleDispatchCompleted,
+  settleDispatchFailed,
+} from "./workflow-dispatch-ledger.js";
 import { createWorkflowJournalReporter } from "./workflow-journal-reporter.js";
 import { createWorkflowPhaseReporter } from "./workflow-phase-reporter.js";
 import { createWorkflowTurnReporter } from "./workflow-turn-reporter.js";
@@ -247,6 +251,13 @@ function openDispatchClaim(
     return { kind: "degraded" };
   }
 
+}
+
+function logDispatchLedgerWriteFailure(err: unknown): void {
+  debugLog("autoLoop", {
+    phase: "dispatch-ledger-write-failed",
+    error: err instanceof Error ? err.message : String(err),
+  });
 }
 
 // ── Memory pressure monitoring (#3331) ──────────────────────────────────
@@ -868,16 +879,14 @@ export async function autoLoop(
         if (err instanceof ModelPolicyDispatchBlockedError) {
           throw err;
         }
-        if (dispatchId !== null) {
-          try {
-            markDispatchFailed(dispatchId, {
-              errorSummary: formatDispatchExceptionSummary({ error: err }),
-            });
-            dispatchSettled = true;
-          } catch (ledgerErr) {
-            debugLog("autoLoop", { phase: "dispatch-ledger-write-failed", error: ledgerErr instanceof Error ? ledgerErr.message : String(ledgerErr) });
-          }
-        }
+        dispatchSettled = settleDispatchFailed(
+          dispatchId,
+          formatDispatchExceptionSummary({ error: err }),
+          {
+            markFailed: markDispatchFailed,
+            logWriteFailure: logDispatchLedgerWriteFailure,
+          },
+        ) || dispatchSettled;
         throw err;
       }
       if (unitPhaseResult.action === "next") {
@@ -889,14 +898,10 @@ export async function autoLoop(
         unitId: iterData.unitId,
       });
       if (unitPhaseResult.action === "break") {
-        if (dispatchId !== null) {
-          try {
-            markDispatchFailed(dispatchId, { errorSummary: "unit-break" });
-            dispatchSettled = true;
-          } catch (err) {
-            debugLog("autoLoop", { phase: "dispatch-ledger-write-failed", error: err instanceof Error ? err.message : String(err) });
-          }
-        }
+        dispatchSettled = settleDispatchFailed(dispatchId, "unit-break", {
+          markFailed: markDispatchFailed,
+          logWriteFailure: logDispatchLedgerWriteFailure,
+        }) || dispatchSettled;
         finishTurn("stopped", "execution", "unit-break");
         break;
       }
@@ -907,16 +912,14 @@ export async function autoLoop(
       try {
         finalizeResult = await runFinalize(ic, iterData, loopState, sidecarItem);
       } catch (err) {
-        if (dispatchId !== null) {
-          try {
-            markDispatchFailed(dispatchId, {
-              errorSummary: formatDispatchExceptionSummary({ error: err }),
-            });
-            dispatchSettled = true;
-          } catch (ledgerErr) {
-            debugLog("autoLoop", { phase: "dispatch-ledger-write-failed", error: ledgerErr instanceof Error ? ledgerErr.message : String(ledgerErr) });
-          }
-        }
+        dispatchSettled = settleDispatchFailed(
+          dispatchId,
+          formatDispatchExceptionSummary({ error: err }),
+          {
+            markFailed: markDispatchFailed,
+            logWriteFailure: logDispatchLedgerWriteFailure,
+          },
+        ) || dispatchSettled;
         throw err;
       }
       phaseReporter.report("finalize", finalizeResult.action, {
@@ -931,38 +934,26 @@ export async function autoLoop(
             : { action: "next" },
       );
       if (finalizeDecision.action === "stop") {
-        if (dispatchId !== null) {
-          try {
-            markDispatchFailed(dispatchId, { errorSummary: finalizeDecision.ledgerErrorSummary });
-            dispatchSettled = true;
-          } catch (err) {
-            debugLog("autoLoop", { phase: "dispatch-ledger-write-failed", error: err instanceof Error ? err.message : String(err) });
-          }
-        }
+        dispatchSettled = settleDispatchFailed(dispatchId, finalizeDecision.ledgerErrorSummary, {
+          markFailed: markDispatchFailed,
+          logWriteFailure: logDispatchLedgerWriteFailure,
+        }) || dispatchSettled;
         finishTurn("stopped", finalizeDecision.failureClass, finalizeDecision.turnError);
         break;
       }
       if (finalizeDecision.action === "retry") {
-        if (dispatchId !== null) {
-          try {
-            markDispatchFailed(dispatchId, { errorSummary: finalizeDecision.ledgerErrorSummary });
-            dispatchSettled = true;
-          } catch (err) {
-            debugLog("autoLoop", { phase: "dispatch-ledger-write-failed", error: err instanceof Error ? err.message : String(err) });
-          }
-        }
+        dispatchSettled = settleDispatchFailed(dispatchId, finalizeDecision.ledgerErrorSummary, {
+          markFailed: markDispatchFailed,
+          logWriteFailure: logDispatchLedgerWriteFailure,
+        }) || dispatchSettled;
         finishTurn("retry");
         continue;
       }
 
-      if (dispatchId !== null) {
-        try {
-          markDispatchCompleted(dispatchId);
-          dispatchSettled = true;
-        } catch (err) {
-          debugLog("autoLoop", { phase: "dispatch-ledger-write-failed", error: err instanceof Error ? err.message : String(err) });
-        }
-      }
+      dispatchSettled = settleDispatchCompleted(dispatchId, {
+        markCompleted: markDispatchCompleted,
+        logWriteFailure: logDispatchLedgerWriteFailure,
+      }) || dispatchSettled;
       consecutiveErrors = 0; // Iteration completed successfully
       consecutiveCooldowns = 0;
       recentErrorMessages.length = 0;
@@ -974,17 +965,14 @@ export async function autoLoop(
       // ── Blanket catch: absorb unexpected exceptions, apply graduated recovery ──
       const msg = loopErr instanceof Error ? loopErr.message : String(loopErr);
       if (dispatchId !== null && !dispatchSettled && !(loopErr instanceof ModelPolicyDispatchBlockedError)) {
-        try {
-          markDispatchFailed(dispatchId, {
-            errorSummary: formatUnhandledDispatchErrorSummary({ error: loopErr }),
-          });
-          dispatchSettled = true;
-        } catch (err) {
-          debugLog("autoLoop", {
-            phase: "dispatch-ledger-write-failed",
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
+        dispatchSettled = settleDispatchFailed(
+          dispatchId,
+          formatUnhandledDispatchErrorSummary({ error: loopErr }),
+          {
+            markFailed: markDispatchFailed,
+            logWriteFailure: logDispatchLedgerWriteFailure,
+          },
+        ) || dispatchSettled;
       }
 
       // Always emit iteration-end on error so the journal records iteration
