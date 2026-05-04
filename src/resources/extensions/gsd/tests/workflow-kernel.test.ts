@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { decideDispatchClaim, decideWorkflowLoop } from "../auto/workflow-kernel.ts";
+import { decideDispatchClaim, decideEngineDispatch, decideWorkflowLoop } from "../auto/workflow-kernel.ts";
 
 test("decideWorkflowLoop continues when dispatch preconditions are valid", () => {
   assert.deepEqual(
@@ -107,4 +107,20 @@ test("decideDispatchClaim skips claimed units with a stable reason", () => {
     decideDispatchClaim({ kind: "skip", reason: "already-active" }),
     { action: "skip", reason: "already-active" },
   );
+});
+
+test("decideEngineDispatch preserves stop reasons and defaults missing ones", () => {
+  assert.deepEqual(
+    decideEngineDispatch({ action: "stop", reason: "done" }),
+    { action: "stop", reason: "done" },
+  );
+  assert.deepEqual(
+    decideEngineDispatch({ action: "stop" }),
+    { action: "stop", reason: "Engine stopped" },
+  );
+});
+
+test("decideEngineDispatch passes through skip and dispatch actions", () => {
+  assert.deepEqual(decideEngineDispatch({ action: "skip" }), { action: "skip" });
+  assert.deepEqual(decideEngineDispatch({ action: "dispatch" }), { action: "dispatch" });
 });

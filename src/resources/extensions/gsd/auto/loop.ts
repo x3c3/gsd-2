@@ -53,7 +53,7 @@ import type { UokGraphNode } from "../uok/contracts.js";
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { normalizeRealPath } from "../paths.js";
-import { decideDispatchClaim, decideWorkflowLoop } from "./workflow-kernel.js";
+import { decideDispatchClaim, decideEngineDispatch, decideWorkflowLoop } from "./workflow-kernel.js";
 
 // ── Stuck detection persistence (#3704) ──────────────────────────────────
 // Phase C migration: stuck-state.json deleted in favor of DB-backed
@@ -576,12 +576,16 @@ export async function autoLoop(
 
         debugLog("autoLoop", { phase: "custom-engine-dispatch", iteration });
         const dispatch = await engine.resolveDispatch(engineState, { basePath: s.basePath });
+        const engineDispatchDecision = decideEngineDispatch({
+          action: dispatch.action,
+          reason: dispatch.reason,
+        });
 
-        if (dispatch.action === "stop") {
-          await deps.stopAuto(ctx, pi, dispatch.reason ?? "Engine stopped");
+        if (engineDispatchDecision.action === "stop") {
+          await deps.stopAuto(ctx, pi, engineDispatchDecision.reason);
           break;
         }
-        if (dispatch.action === "skip") {
+        if (engineDispatchDecision.action === "skip") {
           continue;
         }
 

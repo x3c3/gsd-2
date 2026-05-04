@@ -22,6 +22,16 @@ export type DispatchClaimDecision =
   | { action: "run"; dispatchId: number | null }
   | { action: "skip"; reason: DispatchClaimSkipReason };
 
+export type EngineDispatchInput =
+  | { action: "dispatch" }
+  | { action: "skip" }
+  | { action: "stop"; reason?: string | null };
+
+export type EngineDispatchDecision =
+  | { action: "dispatch" }
+  | { action: "skip" }
+  | { action: "stop"; reason: string };
+
 export interface WorkflowLoopInput {
   active: boolean;
   iteration: number;
@@ -88,4 +98,19 @@ export function decideDispatchClaim(input: DispatchClaimInput): DispatchClaimDec
     action: "run",
     dispatchId: null,
   };
+}
+
+export function decideEngineDispatch(input: EngineDispatchInput): EngineDispatchDecision {
+  if (input.action === "stop") {
+    return {
+      action: "stop",
+      reason: input.reason ?? "Engine stopped",
+    };
+  }
+
+  if (input.action === "skip") {
+    return { action: "skip" };
+  }
+
+  return { action: "dispatch" };
 }
