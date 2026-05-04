@@ -410,10 +410,6 @@ jobs:
     # has no shipped features yet, so feature-level e2e tests scaffolding,
     # not product. Expand once Studio ships features.
     #
-    # Non-blocking via continue-on-error: there is currently a known
-    # preload-format bug surfaced by this test (see follow-up issue).
-    # Drop continue-on-error once the preload bug is fixed.
-    #
     # No untrusted GitHub event input is consumed in run: blocks.
     timeout-minutes: 15
     needs: detect-changes
@@ -421,7 +417,6 @@ jobs:
       needs.detect-changes.outputs.docs-only != 'true' &&
       needs.detect-changes.outputs.studio-changed == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    continue-on-error: true
 
     steps:
       - name: Checkout repository
