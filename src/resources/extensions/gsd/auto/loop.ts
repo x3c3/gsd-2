@@ -59,6 +59,7 @@ import {
   decideEngineReconcile,
   decideFinalizeResult,
   decideMemoryPressure,
+  decideMinRequestInterval,
   decideWorkflowLoop,
 } from "./workflow-kernel.js";
 import { createWorkflowTurnReporter } from "./workflow-turn-reporter.js";
@@ -292,13 +293,14 @@ function resolveDispatchNodeKind(
 
 async function enforceMinRequestInterval(s: AutoSession, prefs: IterationContext["prefs"]): Promise<void> {
   const minInterval = prefs?.min_request_interval_ms ?? 0;
-  if (minInterval > 0 && s.lastRequestTimestamp > 0) {
-    const elapsed = Date.now() - s.lastRequestTimestamp;
-    if (elapsed < minInterval) {
-      const waitMs = minInterval - elapsed;
-      debugLog("autoLoop", { phase: "rate-limit-wait", waitMs });
-      await new Promise<void>(r => setTimeout(r, waitMs));
-    }
+  const decision = decideMinRequestInterval({
+    minIntervalMs: minInterval,
+    lastRequestTimestamp: s.lastRequestTimestamp,
+    nowMs: Date.now(),
+  });
+  if (decision.action === "wait") {
+    debugLog("autoLoop", { phase: "rate-limit-wait", waitMs: decision.waitMs });
+    await new Promise<void>(r => setTimeout(r, decision.waitMs));
   }
 }
 

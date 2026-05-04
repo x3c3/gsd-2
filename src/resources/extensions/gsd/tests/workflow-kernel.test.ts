@@ -10,6 +10,7 @@ import {
   decideEngineReconcile,
   decideFinalizeResult,
   decideMemoryPressure,
+  decideMinRequestInterval,
   decideWorkflowLoop,
 } from "../auto/workflow-kernel.ts";
 
@@ -213,5 +214,43 @@ test("decideMemoryPressure returns stable stop messages when pressured", () => {
         "Resume with /gsd auto to continue from where you left off.",
       turnError: "memory-pressure",
     },
+  );
+});
+
+test("decideMinRequestInterval continues when throttling is disabled or unused", () => {
+  assert.deepEqual(
+    decideMinRequestInterval({
+      minIntervalMs: 0,
+      lastRequestTimestamp: 1000,
+      nowMs: 1001,
+    }),
+    { action: "continue" },
+  );
+  assert.deepEqual(
+    decideMinRequestInterval({
+      minIntervalMs: 5000,
+      lastRequestTimestamp: 0,
+      nowMs: 1001,
+    }),
+    { action: "continue" },
+  );
+});
+
+test("decideMinRequestInterval returns remaining wait budget", () => {
+  assert.deepEqual(
+    decideMinRequestInterval({
+      minIntervalMs: 5000,
+      lastRequestTimestamp: 10_000,
+      nowMs: 12_500,
+    }),
+    { action: "wait", waitMs: 2500 },
+  );
+  assert.deepEqual(
+    decideMinRequestInterval({
+      minIntervalMs: 5000,
+      lastRequestTimestamp: 10_000,
+      nowMs: 15_000,
+    }),
+    { action: "continue" },
   );
 });

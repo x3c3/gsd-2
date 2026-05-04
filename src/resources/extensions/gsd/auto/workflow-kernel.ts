@@ -79,6 +79,16 @@ export type MemoryPressureDecision =
       turnError: "memory-pressure";
     };
 
+export interface MinRequestIntervalInput {
+  minIntervalMs: number;
+  lastRequestTimestamp: number;
+  nowMs: number;
+}
+
+export type MinRequestIntervalDecision =
+  | { action: "continue" }
+  | { action: "wait"; waitMs: number };
+
 export interface WorkflowLoopInput {
   active: boolean;
   iteration: number;
@@ -220,5 +230,21 @@ export function decideMemoryPressure(input: MemoryPressureInput): MemoryPressure
       `Stopping gracefully to prevent OOM kill after ${input.iteration} iterations. ` +
       "Resume with /gsd auto to continue from where you left off.",
     turnError: "memory-pressure",
+  };
+}
+
+export function decideMinRequestInterval(input: MinRequestIntervalInput): MinRequestIntervalDecision {
+  if (input.minIntervalMs <= 0 || input.lastRequestTimestamp <= 0) {
+    return { action: "continue" };
+  }
+
+  const elapsedMs = input.nowMs - input.lastRequestTimestamp;
+  if (elapsedMs >= input.minIntervalMs) {
+    return { action: "continue" };
+  }
+
+  return {
+    action: "wait",
+    waitMs: input.minIntervalMs - elapsedMs,
   };
 }
