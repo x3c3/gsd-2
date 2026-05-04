@@ -476,6 +476,8 @@ Baseline usage is documented in `docs/dev/refactor-baseline-runbook.md`.
 
 **Exit gate:** Migration, state derivation, dependency lookup, and single-writer tests pass with compatibility exports intact.
 
+**Closeout status (2026-05-04):** Phase 5 SRC-first DB split is closed for this merge stack. `gsd-db.ts` remains the compatibility facade while provider loading, adapter wrapping, workspace connection caching, open-status state, transaction running, schema metadata/version helpers, runtime KV schema, coordination schema, verification-evidence schema, memory FTS schema, base schema DDL, migration backup/control/DDL steps, and row mappers for decision/requirement, task/slice, milestone/artifact, lightweight query, and verification evidence now live in focused source-owned modules. Verification coverage includes DB provider/adapter/cache/open-state/transaction/schema/migration helper tests, `gsd-db.test.ts`, `derive-state-db.test.ts`, `derive-state-db-disk-reconcile.test.ts`, and single-writer guardrail coverage.
+
 ## Phase 6: App Surface Plan - Deferred
 
 **Goal:** Deferred. Make app surfaces thin adapters over shared contracts only after the `src` runtime is smaller and more stable.
@@ -530,6 +532,8 @@ Baseline usage is documented in `docs/dev/refactor-baseline-runbook.md`.
 - Migrate one surface at a time so contract regressions are isolated.
 
 **Exit gate:** App contract tests and authenticated web flows pass.
+
+**Deferred status (2026-05-04):** Phase 6 remains intentionally out of scope for this SRC-first merge. A few low-risk app-surface contract import slices landed where they supported shared DTO convergence, but broad web, VS Code, Studio, and app-store restructuring is not required to merge the source-runtime refactor. Treat remaining Phase 6 work as a follow-up roadmap item with its own PR stack and app-specific verification gate.
 
 ## Phase 7: Process Consolidation Plan
 
@@ -734,6 +738,6 @@ Parallel work is allowed only inside a phase when file ownership is disjoint and
 - Warm local verification is materially faster while full `verify:pr` remains intact.
 - Auto-mode has a pure testable workflow kernel and explicit side-effect adapters.
 - DB internals are split without weakening the single-writer invariant.
-- Web/app surfaces consume shared contracts and have thinner stores/adapters.
+- App-surface convergence is either completed in a dedicated Phase 6 stack or explicitly deferred from the SRC-first merge.
 - Shipping paths produce one consistent PR evidence format.
 - Legacy paths are removed only after telemetry, tests, and migration notes.
