@@ -33,6 +33,7 @@ import { logError, logWarning } from "./workflow-logger.js";
 import { createDbAdapter, type DbAdapter } from "./db-adapter.js";
 import { createDbConnectionCache, type DbConnectionCacheEntry } from "./db-connection-cache.js";
 import { createDbOpenState, type DbOpenPhase } from "./db-open-state.js";
+import { createRuntimeKvTableV25 } from "./db-runtime-kv-schema.js";
 import { ensureColumn, getCurrentSchemaVersion, indexExists, recordSchemaVersion } from "./db-schema-metadata.js";
 import { createDbTransactionRunner } from "./db-transaction.js";
 import { createSqliteProviderLoader, suppressSqliteWarning, type DbProviderName, type SqliteFallbackOpen } from "./db-provider.js";
@@ -156,32 +157,6 @@ function createCoordinationTablesV24(db: DbAdapter): void {
   // index serves both targeted (target_worker = ?) and broadcast
   // (target_worker IS NULL) queries. Codex review LOW B4 documented.
   db.exec("CREATE INDEX IF NOT EXISTS idx_command_queue_pending ON command_queue(target_worker, claimed_at)");
-}
-
-/**
- * Create the v25 runtime_kv table. Idempotent — uses IF NOT EXISTS.
- *
- * STRICT INVARIANT: runtime_kv is NON-CORRECTNESS-CRITICAL. UI cursors,
- * dashboard caches, last-seen-version markers, resume cursors, and other
- * "soft" state are OK. Anything that drives auto-mode control flow gets
- * typed columns in unit_dispatches / workers / milestone_leases — never
- * a bag of JSON in runtime_kv.
- *
- * Scope partitioning: ('global', '', key) for project-wide values;
- * ('worker', worker_id, key) for per-worker state (resume cursors);
- * ('milestone', milestone_id, key) for per-milestone soft state.
- */
-function createRuntimeKvTableV25(db: DbAdapter): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS runtime_kv (
-      scope TEXT NOT NULL,
-      scope_id TEXT NOT NULL DEFAULT '',
-      key TEXT NOT NULL,
-      value_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (scope, scope_id, key)
-    )
-  `);
 }
 
 function dedupeVerificationEvidenceRows(db: DbAdapter): void {
