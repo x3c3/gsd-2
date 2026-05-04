@@ -33,6 +33,13 @@ import { logError, logWarning } from "./workflow-logger.js";
 import { createDbAdapter, type DbAdapter } from "./db-adapter.js";
 import { createCoordinationTablesV24 } from "./db-coordination-schema.js";
 import { createDbConnectionCache, type DbConnectionCacheEntry } from "./db-connection-cache.js";
+import {
+  rowToActiveDecision,
+  rowToActiveRequirement,
+  rowToDecision,
+  rowToRequirement,
+  rowsToRequirementCounts,
+} from "./db-decision-requirement-rows.js";
 import { isMemoriesFtsAvailableSchema, tryCreateMemoriesFtsSchema } from "./db-memory-fts-schema.js";
 import { createDbOpenState, type DbOpenPhase } from "./db-open-state.js";
 import { createRuntimeKvTableV25 } from "./db-runtime-kv-schema.js";
@@ -1397,37 +1404,13 @@ export function getDecisionById(id: string): Decision | null {
   if (!currentDb) return null;
   const row = currentDb.prepare("SELECT * FROM decisions WHERE id = ?").get(id);
   if (!row) return null;
-  return {
-    seq: row["seq"] as number,
-    id: row["id"] as string,
-    when_context: row["when_context"] as string,
-    scope: row["scope"] as string,
-    decision: row["decision"] as string,
-    choice: row["choice"] as string,
-    rationale: row["rationale"] as string,
-    revisable: row["revisable"] as string,
-    made_by: (row["made_by"] as string as import("./types.js").DecisionMadeBy) ?? "agent",
-    source: (row["source"] as string) ?? "discussion",
-    superseded_by: (row["superseded_by"] as string) ?? null,
-  };
+  return rowToDecision(row);
 }
 
 export function getActiveDecisions(): Decision[] {
   if (!currentDb) return [];
   const rows = currentDb.prepare("SELECT * FROM active_decisions").all();
-  return rows.map((row) => ({
-    seq: row["seq"] as number,
-    id: row["id"] as string,
-    when_context: row["when_context"] as string,
-    scope: row["scope"] as string,
-    decision: row["decision"] as string,
-    choice: row["choice"] as string,
-    rationale: row["rationale"] as string,
-    revisable: row["revisable"] as string,
-    made_by: (row["made_by"] as string as import("./types.js").DecisionMadeBy) ?? "agent",
-    source: (row["source"] as string) ?? "discussion",
-    superseded_by: null,
-  }));
+  return rows.map(rowToActiveDecision);
 }
 
 export function insertRequirement(r: Requirement): void {
@@ -1455,39 +1438,13 @@ export function getRequirementById(id: string): Requirement | null {
   if (!currentDb) return null;
   const row = currentDb.prepare("SELECT * FROM requirements WHERE id = ?").get(id);
   if (!row) return null;
-  return {
-    id: row["id"] as string,
-    class: row["class"] as string,
-    status: row["status"] as string,
-    description: row["description"] as string,
-    why: row["why"] as string,
-    source: row["source"] as string,
-    primary_owner: row["primary_owner"] as string,
-    supporting_slices: row["supporting_slices"] as string,
-    validation: row["validation"] as string,
-    notes: row["notes"] as string,
-    full_content: row["full_content"] as string,
-    superseded_by: (row["superseded_by"] as string) ?? null,
-  };
+  return rowToRequirement(row);
 }
 
 export function getActiveRequirements(): Requirement[] {
   if (!currentDb) return [];
   const rows = currentDb.prepare("SELECT * FROM active_requirements").all();
-  return rows.map((row) => ({
-    id: row["id"] as string,
-    class: row["class"] as string,
-    status: row["status"] as string,
-    description: row["description"] as string,
-    why: row["why"] as string,
-    source: row["source"] as string,
-    primary_owner: row["primary_owner"] as string,
-    supporting_slices: row["supporting_slices"] as string,
-    validation: row["validation"] as string,
-    notes: row["notes"] as string,
-    full_content: row["full_content"] as string,
-    superseded_by: null,
-  }));
+  return rows.map(rowToActiveRequirement);
 }
 
 export function getRequirementCounts(): {
@@ -1504,18 +1461,7 @@ export function getRequirementCounts(): {
   const rows = currentDb
     .prepare("SELECT lower(status) as status, COUNT(*) as count FROM requirements GROUP BY lower(status)")
     .all();
-  const counts = { active: 0, validated: 0, deferred: 0, outOfScope: 0, blocked: 0, total: 0 };
-  for (const row of rows) {
-    const status = String(row["status"] ?? "");
-    const count = Number(row["count"] ?? 0);
-    counts.total += count;
-    if (status === "active") counts.active += count;
-    else if (status === "validated") counts.validated += count;
-    else if (status === "deferred") counts.deferred += count;
-    else if (status === "out-of-scope" || status === "out_of_scope") counts.outOfScope += count;
-    else if (status === "blocked") counts.blocked += count;
-  }
-  return counts;
+  return rowsToRequirementCounts(rows);
 }
 
 export function getDbOwnerPid(): number {
