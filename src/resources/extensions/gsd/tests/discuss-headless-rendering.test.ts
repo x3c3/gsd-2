@@ -9,12 +9,13 @@ import { join } from "node:path";
 
 test("discuss-headless prompt renders compact investigation and audit guidance", async (t) => {
   const previousGsdHome = process.env.GSD_HOME;
-  const isolatedHome = mkdtempSync(join(tmpdir(), "gsd-discuss-headless-render-"));
+  const providedGsdHome = process.env.GSD_TEST_HOME;
+  const isolatedHome = providedGsdHome ?? mkdtempSync(join(tmpdir(), "gsd-discuss-headless-render-"));
   process.env.GSD_HOME = isolatedHome;
   t.after(() => {
     if (previousGsdHome === undefined) delete process.env.GSD_HOME;
     else process.env.GSD_HOME = previousGsdHome;
-    rmSync(isolatedHome, { recursive: true, force: true });
+    if (!providedGsdHome) rmSync(isolatedHome, { recursive: true, force: true });
   });
 
   const { loadPrompt } = await import(`../prompt-loader.ts?test=${Date.now()}`);

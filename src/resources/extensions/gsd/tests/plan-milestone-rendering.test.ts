@@ -9,13 +9,14 @@ import { join } from "node:path";
 
 test("plan-milestone prompt renders compact DB-backed planning guidance", async (t) => {
   const previousGsdHome = process.env.GSD_HOME;
-  const isolatedHome = mkdtempSync(join(tmpdir(), "gsd-plan-milestone-render-"));
-  const fixtureRoot = join("workspace", "gsd-fixture");
+  const providedGsdHome = process.env.GSD_TEST_HOME;
+  const isolatedHome = providedGsdHome ?? mkdtempSync(join(tmpdir(), "gsd-plan-milestone-render-"));
+  const fixtureRoot = process.env.GSD_TEST_WORKSPACE_ROOT ?? process.cwd();
   process.env.GSD_HOME = isolatedHome;
   t.after(() => {
     if (previousGsdHome === undefined) delete process.env.GSD_HOME;
     else process.env.GSD_HOME = previousGsdHome;
-    rmSync(isolatedHome, { recursive: true, force: true });
+    if (!providedGsdHome) rmSync(isolatedHome, { recursive: true, force: true });
   });
 
   const { loadPrompt } = await import(`../prompt-loader.ts?test=${Date.now()}`);
