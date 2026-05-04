@@ -177,6 +177,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					return;
 			}
 		case "agent_start":
+			host.clearBlockingError();
 			if (host.retryEscapeHandler) {
 				host.defaultEditor.onEscape = host.retryEscapeHandler;
 				host.retryEscapeHandler = undefined;

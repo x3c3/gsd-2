@@ -1233,6 +1233,7 @@ export class InteractiveMode {
 						this.streamingComponent = undefined;
 						this.streamingMessage = undefined;
 						this.pendingTools.clear();
+						this.clearBlockingError();
 
 						// Render any messages added via setup, or show empty session
 						this.renderInitialMessages();
@@ -2898,6 +2899,10 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	clearBlockingError(): void {
+		this.lastBlockingError = undefined;
+	}
+
 	showWarning(warningMessage: string): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
@@ -3707,6 +3712,7 @@ export class InteractiveMode {
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
+		this.clearBlockingError();
 
 		// Switch session via AgentSession (emits extension session events)
 		await this.session.switchSession(sessionPath);
@@ -4028,6 +4034,7 @@ export class InteractiveMode {
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 		this.pendingImages.length = 0;
+		this.clearBlockingError();
 
 		// Reset contextual tips for the new session
 		this.contextualTips.reset();

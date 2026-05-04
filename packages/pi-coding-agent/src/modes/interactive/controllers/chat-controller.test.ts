@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { findLatestPinnableText } from "./chat-controller.js";
+import { findLatestPinnableText, handleAgentEvent } from "./chat-controller.js";
+import { initTheme } from "../theme/theme.js";
 
 test("findLatestPinnableText: empty content returns empty string", () => {
 	assert.equal(findLatestPinnableText([]), "");
@@ -68,4 +69,45 @@ test("findLatestPinnableText: thinking blocks are not pinnable", () => {
 		{ type: "toolCall", id: "1", name: "Read" },
 	];
 	assert.equal(findLatestPinnableText(blocks), "");
+});
+
+test("handleAgentEvent: agent_start clears stale adaptive blocking error", async () => {
+	initTheme("dark", false);
+	let cleared = false;
+	let requestedRender = false;
+	const host = {
+		isInitialized: true,
+		clearBlockingError: () => {
+			cleared = true;
+		},
+		retryEscapeHandler: undefined,
+		retryLoader: undefined,
+		loadingAnimation: undefined,
+		statusContainer: {
+			clear() {},
+			addChild() {},
+		},
+		ui: {
+			requestRender() {
+				requestedRender = true;
+			},
+		},
+		defaultEditor: {},
+		footer: {
+			invalidate() {},
+		},
+		settingsManager: {
+			getTimestampFormat() {
+				return "date-time-iso";
+			},
+		},
+		defaultWorkingMessage: "Working...",
+		pendingWorkingMessage: undefined,
+	} as any;
+
+	await handleAgentEvent(host, { type: "agent_start" } as any);
+	host.loadingAnimation?.stop();
+
+	assert.equal(cleared, true);
+	assert.equal(requestedRender, true);
 });
