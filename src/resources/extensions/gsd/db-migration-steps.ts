@@ -349,6 +349,33 @@ export function applyMigrationV18MemorySources(db: DbAdapter): void {
   db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope ON memory_sources(scope)");
 }
 
+export interface MigrationV19Hooks {
+  tryCreateMemoriesFts(db: DbAdapter): boolean;
+  isMemoriesFtsAvailable(db: DbAdapter): boolean;
+  backfillMemoriesFts(db: DbAdapter): void;
+  logWarning(scope: string, message: string): void;
+}
+
+export function applyMigrationV19MemoryFts(db: DbAdapter, hooks: MigrationV19Hooks): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_embeddings (
+      memory_id TEXT PRIMARY KEY,
+      model TEXT NOT NULL,
+      dim INTEGER NOT NULL,
+      vector BLOB NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  hooks.tryCreateMemoriesFts(db);
+  if (hooks.isMemoriesFtsAvailable(db)) {
+    try {
+      hooks.backfillMemoriesFts(db);
+    } catch (err) {
+      hooks.logWarning("db", `FTS5 backfill failed: ${(err as Error).message}`);
+    }
+  }
+}
+
 export function applyMigrationV20MemoryRelations(db: DbAdapter): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS memory_relations (
@@ -370,4 +397,38 @@ export function applyMigrationV21StructuredMemories(db: DbAdapter): void {
 
 export function applyMigrationV23MilestoneQueue(db: DbAdapter): void {
   ensureColumn(db, "milestones", "sequence", "ALTER TABLE milestones ADD COLUMN sequence INTEGER DEFAULT 0");
+}
+
+export interface MigrationV22Hooks {
+  copyQualityGateRowsToRepairedTable(db: DbAdapter): void;
+}
+
+export function applyMigrationV22QualityGateRepair(db: DbAdapter, hooks: MigrationV22Hooks): void {
+  const qgInfo = db.prepare("PRAGMA table_info(quality_gates)").all() as Array<Record<string, unknown>>;
+  const taskIdCol = qgInfo.find((r) => r["name"] === "task_id");
+  const needsRepair = taskIdCol && (taskIdCol["notnull"] === 0 || taskIdCol["notnull"] === "0");
+  if (needsRepair) {
+    db.exec(`
+      CREATE TABLE quality_gates_new (
+        milestone_id TEXT NOT NULL,
+        slice_id TEXT NOT NULL,
+        gate_id TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'slice',
+        task_id TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        verdict TEXT NOT NULL DEFAULT '',
+        rationale TEXT NOT NULL DEFAULT '',
+        findings TEXT NOT NULL DEFAULT '',
+        evaluated_at TEXT DEFAULT NULL,
+        PRIMARY KEY (milestone_id, slice_id, gate_id, task_id),
+        FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id)
+      )
+    `);
+    hooks.copyQualityGateRowsToRepairedTable(db);
+    db.exec("DROP TABLE quality_gates");
+    db.exec("ALTER TABLE quality_gates_new RENAME TO quality_gates");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
+  }
+  ensureColumn(db, "quality_gates", "scope", "ALTER TABLE quality_gates ADD COLUMN scope TEXT NOT NULL DEFAULT 'slice'");
+  ensureColumn(db, "assessments", "scope", "ALTER TABLE assessments ADD COLUMN scope TEXT NOT NULL DEFAULT ''");
 }

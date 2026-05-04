@@ -15,10 +15,18 @@ import {
   applyMigrationV15AuditTables,
   applyMigrationV17TaskEscalation,
   applyMigrationV18MemorySources,
+  applyMigrationV19MemoryFts,
   applyMigrationV20MemoryRelations,
+  applyMigrationV22QualityGateRepair,
 } from "../db-migration-steps.ts";
 
 class FakeStatement implements DbStatement {
+  private readonly rows: Record<string, unknown>[];
+
+  constructor(rows: Record<string, unknown>[] = []) {
+    this.rows = rows;
+  }
+
   run(): unknown {
     return undefined;
   }
@@ -28,19 +36,20 @@ class FakeStatement implements DbStatement {
   }
 
   all(): Record<string, unknown>[] {
-    return [];
+    return this.rows;
   }
 }
 
 class FakeAdapter implements DbAdapter {
   readonly execCalls: string[] = [];
+  tableInfoRows: Record<string, unknown>[] = [];
 
   exec(sql: string): void {
     this.execCalls.push(sql);
   }
 
   prepare(): DbStatement {
-    return new FakeStatement();
+    return new FakeStatement(this.tableInfoRows);
   }
 
   close(): void {}
@@ -109,5 +118,42 @@ describe("db-migration-steps", () => {
     assert.ok(db.execCalls.some((sql) => sql.includes("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope")));
     assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS memory_relations")));
     assert.ok(db.execCalls.some((sql) => sql.includes("CREATE INDEX IF NOT EXISTS idx_memory_relations_from")));
+  });
+
+  test("memory FTS migration delegates data-copy backfill to caller-owned write callback", () => {
+    const db = new FakeAdapter();
+    let backfillCalls = 0;
+    const warnings: string[] = [];
+
+    applyMigrationV19MemoryFts(db, {
+      tryCreateMemoriesFts: () => true,
+      isMemoriesFtsAvailable: () => true,
+      backfillMemoriesFts: () => {
+        backfillCalls += 1;
+      },
+      logWarning: (_scope, message) => warnings.push(message),
+    });
+
+    assert.equal(backfillCalls, 1);
+    assert.deepEqual(warnings, []);
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE IF NOT EXISTS memory_embeddings")));
+  });
+
+  test("quality gate repair delegates row copy to caller-owned write callback", () => {
+    const db = new FakeAdapter();
+    db.tableInfoRows = [{ name: "task_id", notnull: 0 }];
+    let copyCalls = 0;
+
+    applyMigrationV22QualityGateRepair(db, {
+      copyQualityGateRowsToRepairedTable: () => {
+        copyCalls += 1;
+      },
+    });
+
+    assert.equal(copyCalls, 1);
+    assert.ok(db.execCalls.some((sql) => sql.includes("CREATE TABLE quality_gates_new")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("ALTER TABLE quality_gates_new RENAME TO quality_gates")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("ALTER TABLE quality_gates ADD COLUMN scope")));
+    assert.ok(db.execCalls.some((sql) => sql.includes("ALTER TABLE assessments ADD COLUMN scope")));
   });
 });

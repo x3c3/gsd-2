@@ -72,8 +72,10 @@ import {
   applyMigrationV16EscalationSource,
   applyMigrationV17TaskEscalation,
   applyMigrationV18MemorySources,
+  applyMigrationV19MemoryFts,
   applyMigrationV20MemoryRelations,
   applyMigrationV21StructuredMemories,
+  applyMigrationV22QualityGateRepair,
   applyMigrationV23MilestoneQueue,
 } from "./db-migration-steps.js";
 import { isMemoriesFtsAvailableSchema, tryCreateMemoriesFtsSchema } from "./db-memory-fts-schema.js";
@@ -164,6 +166,19 @@ export function tryCreateMemoriesFts(db: DbAdapter): boolean {
 
 export function isMemoriesFtsAvailable(db: DbAdapter): boolean {
   return isMemoriesFtsAvailableSchema(db);
+}
+
+function backfillMemoriesFts(db: DbAdapter): void {
+  db.exec(`INSERT INTO memories_fts(rowid, content) SELECT seq, content FROM memories`);
+}
+
+function copyQualityGateRowsToRepairedTable(db: DbAdapter): void {
+  db.exec(`
+    INSERT OR IGNORE INTO quality_gates_new
+      (milestone_id, slice_id, gate_id, scope, task_id, status, verdict, rationale, findings, evaluated_at)
+    SELECT milestone_id, slice_id, gate_id, scope, COALESCE(task_id, ''), status, verdict, rationale, findings, evaluated_at
+    FROM quality_gates
+  `);
 }
 
 function migrateSchema(db: DbAdapter): void {
@@ -269,25 +284,12 @@ function migrateSchema(db: DbAdapter): void {
     }
 
     if (currentVersion < 19) {
-      // Memory system Phase 3: embeddings + FTS5 for hybrid retrieval.
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS memory_embeddings (
-          memory_id TEXT PRIMARY KEY,
-          model TEXT NOT NULL,
-          dim INTEGER NOT NULL,
-          vector BLOB NOT NULL,
-          updated_at TEXT NOT NULL
-        )
-      `);
-      tryCreateMemoriesFts(db);
-      // Backfill FTS5 with any existing memories (triggers only cover future writes).
-      if (isMemoriesFtsAvailable(db)) {
-        try {
-          db.exec(`INSERT INTO memories_fts(rowid, content) SELECT seq, content FROM memories`);
-        } catch (err) {
-          logWarning("db", `FTS5 backfill failed: ${(err as Error).message}`);
-        }
-      }
+      applyMigrationV19MemoryFts(db, {
+        tryCreateMemoriesFts,
+        isMemoriesFtsAvailable,
+        backfillMemoriesFts,
+        logWarning,
+      });
       recordSchemaVersion(db, 19);
     }
 
@@ -302,45 +304,7 @@ function migrateSchema(db: DbAdapter): void {
     }
 
     if (currentVersion < 22) {
-      // v22: Repair quality_gates tables that were created by the broken v12
-      // migration (which used COALESCE(task_id, '') as a PK expression — invalid
-      // SQLite DDL). Those DBs have task_id nullable (dflt_value NULL, notnull 0).
-      // Rebuild the table with the correct schema, migrating existing rows via
-      // COALESCE so no data is lost.
-      const qgInfo = db.prepare("PRAGMA table_info(quality_gates)").all() as Array<Record<string, unknown>>;
-      const taskIdCol = qgInfo.find((r) => r["name"] === "task_id");
-      const needsRepair = taskIdCol && (taskIdCol["notnull"] === 0 || taskIdCol["notnull"] === "0");
-      if (needsRepair) {
-        db.exec(`
-          CREATE TABLE quality_gates_new (
-            milestone_id TEXT NOT NULL,
-            slice_id TEXT NOT NULL,
-            gate_id TEXT NOT NULL,
-            scope TEXT NOT NULL DEFAULT 'slice',
-            task_id TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'pending',
-            verdict TEXT NOT NULL DEFAULT '',
-            rationale TEXT NOT NULL DEFAULT '',
-            findings TEXT NOT NULL DEFAULT '',
-            evaluated_at TEXT DEFAULT NULL,
-            PRIMARY KEY (milestone_id, slice_id, gate_id, task_id),
-            FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id)
-          )
-        `);
-        db.exec(`
-          INSERT OR IGNORE INTO quality_gates_new
-            (milestone_id, slice_id, gate_id, scope, task_id, status, verdict, rationale, findings, evaluated_at)
-          SELECT milestone_id, slice_id, gate_id, scope, COALESCE(task_id, ''), status, verdict, rationale, findings, evaluated_at
-          FROM quality_gates
-        `);
-        db.exec("DROP TABLE quality_gates");
-        db.exec("ALTER TABLE quality_gates_new RENAME TO quality_gates");
-        db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
-      }
-      // Ensure scope column exists on quality_gates and assessments (guard
-      // against DBs that somehow lack it after a partial migration).
-      ensureColumn(db, "quality_gates", "scope", "ALTER TABLE quality_gates ADD COLUMN scope TEXT NOT NULL DEFAULT 'slice'");
-      ensureColumn(db, "assessments", "scope", "ALTER TABLE assessments ADD COLUMN scope TEXT NOT NULL DEFAULT ''");
+      applyMigrationV22QualityGateRepair(db, { copyQualityGateRowsToRepairedTable });
       recordSchemaVersion(db, 22);
     }
 
