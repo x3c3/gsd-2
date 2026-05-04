@@ -86,6 +86,7 @@ import {
 import { buildCustomEngineIterationData } from "./workflow-custom-engine-iteration.js";
 import { handleCustomEngineVerifyRetry } from "./workflow-custom-engine-retry.js";
 import { handleCustomEngineReconcile } from "./workflow-custom-engine-reconcile.js";
+import { handleCustomEngineReconcileOutcome } from "./workflow-custom-engine-reconcile-outcome.js";
 
 // ── Stuck detection persistence (#3704) ──────────────────────────────────
 // Phase C migration: stuck-state.json deleted in favor of DB-backed
@@ -562,40 +563,18 @@ export async function autoLoop(
             completeIteration,
           },
         });
-        const reconcileDecision = reconcileOutcome.decision;
-        if (reconcileDecision.action === "complete-workflow") {
-          await deps.stopAuto(ctx, pi, reconcileDecision.stopReason);
-          phaseReporter.report("custom-engine", "milestone-complete", {
-            unitType: iterData.unitType,
-            unitId: iterData.unitId,
-          });
-          finishTurn("completed");
-          break;
-        }
-        if (reconcileDecision.action === "pause") {
-          await deps.pauseAuto(ctx, pi);
-          phaseReporter.report("custom-engine", "pause", {
-            unitType: iterData.unitType,
-            unitId: iterData.unitId,
-          });
-          finishTurn("paused", "manual-attention");
-          break;
-        }
-        if (reconcileDecision.action === "stop") {
-          await deps.stopAuto(ctx, pi, reconcileDecision.reason);
-          phaseReporter.report("custom-engine", "stop", {
-            unitType: iterData.unitType,
-            unitId: iterData.unitId,
-            reason: reconcileOutcome.reason,
-          });
-          finishTurn("stopped", "manual-attention", reconcileOutcome.reason);
-          break;
-        }
-        phaseReporter.report("custom-engine", "continue", {
+        const reconcileFlow = await handleCustomEngineReconcileOutcome({
+          outcome: reconcileOutcome,
           unitType: iterData.unitType,
           unitId: iterData.unitId,
+          deps: {
+            stopAuto: reason => deps.stopAuto(ctx, pi, reason),
+            pauseAuto: () => deps.pauseAuto(ctx, pi),
+            report: (action, details) => phaseReporter.report("custom-engine", action, details),
+            finishTurn,
+          },
         });
-        finishTurn("completed");
+        if (reconcileFlow.action === "break") break;
         continue;
       }
 
