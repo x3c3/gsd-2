@@ -35,7 +35,7 @@ Investigate before making decisions:
 2. Check mentioned tech with `resolve_library` / `get_library_docs`.
 3. Use `search-the-web`, `fetch_page`, or `search_and_read` only for current external facts.
 
-Budget searches across investigation and focused research. Prefer library docs and one-shot `search_and_read`; avoid repeated similar queries. Decisions must reflect codebase and ecosystem evidence.
+Budget searches across investigation and focused research. Prefer library docs and one-shot `search_and_read`; avoid repeat queries. Decisions must reflect codebase and ecosystem evidence.
 
 ## Autonomous Decision-Making
 
@@ -66,11 +66,7 @@ This is the audit trail. Print it.
 
 ## Focused Research
 
-Do focused research before roadmap creation. Research is advisory, not auto-binding. Use the spec + investigation to identify table stakes, implied domain-standard behaviors, likely omissions, anti-features/scope traps, and differentiators worth preserving.
-
-For multi-milestone visions, research should cover the full landscape, not just the first milestone. Research findings may affect milestone sequencing, not just slice ordering within M001.
-
-Headless difference: apply judgment instead of asking for confirmation. Include research findings aligned with the spec; defer or mark out of scope tangential scope expansion. Document reasoning.
+Do focused research before roadmap creation. Research is advisory, not auto-binding. Use the spec plus investigation to identify table stakes, implied domain-standard behavior, likely omissions, scope traps, and differentiators. For multi-milestone visions, research the full landscape because findings may affect milestone sequencing. Apply judgment instead of asking; include aligned findings, defer or mark tangential expansion out of scope, and document reasoning.
 
 ## Capability Contract
 
@@ -100,9 +96,7 @@ Confirm the reflection size estimate still holds. If investigation/research chan
 
 ### Roadmap Preview
 
-Before writing files, **print the planned roadmap in chat**: markdown table with Slice, Title, Risk, Depends, Demo. Below it, print milestone definition of done bullets.
-
-This is the user's TUI audit trail; do not skip it.
+Before writing files, **print the planned roadmap in chat**: markdown table with Slice, Title, Risk, Depends, Demo. Below it, print milestone definition of done bullets. This is the user's TUI audit trail; do not skip it.
 
 ### Naming Convention
 
@@ -169,7 +163,7 @@ If a milestone has no dependencies, omit frontmatter. Do NOT rely on QUEUE.md or
 
 For each remaining milestone, in dependency order, autonomously decide the readiness mode:
 
-- **Write full context** — if the spec provides enough detail for this milestone and investigation confirms feasibility. Write a full `CONTEXT.md` with technical assumptions verified against the actual codebase.
+- **Write full context** — if the spec provides enough detail and investigation confirms feasibility. Write full `CONTEXT.md` with technical assumptions verified against actual code.
 - **Write draft for later** — if the spec has seed material but the milestone needs its own investigation/research in a future session. Write a `CONTEXT-DRAFT.md` capturing seed material, key ideas, provisional scope, and open questions. **Downstream:** Auto-mode pauses at this milestone and prompts the user to discuss.
 - **Just queue it** — if the milestone is identified but the spec provides no actionable detail. No context file written. **Downstream:** Auto-mode pauses and starts a full discussion from scratch.
 
@@ -228,8 +222,8 @@ After completing every step above, say exactly: "Milestone {{milestoneId}} ready
 - **DO NOT ask the user any questions** — this is headless mode. Make judgment calls and document them.
 - **Preserve the specification's terminology** — don't paraphrase domain-specific language
 - **Document assumptions** — every judgment call gets noted in CONTEXT.md under "Assumptions" with reasoning
-- **Investigate thoroughly** — scout codebase, check library docs, web search. Same rigor as interactive mode.
-- **Do focused research** — identify table stakes, domain standards, omissions, scope traps. Same rigor as interactive mode.
+- **Investigate thoroughly** — scout codebase, check library docs, and web search with the same rigor as interactive mode.
+- **Do focused research** — identify table stakes, domain standards, omissions, and scope traps.
 - **Use proper tools** — `gsd_plan_milestone` for roadmaps, `gsd_decision_save` for decisions, `gsd_milestone_generate_id` for IDs
 - **Print artifacts in chat** — requirements table, roadmap preview, depth summary. The TUI scrollback is the user's audit trail.
 - **Use depends_on frontmatter** for multi-milestone sequences
