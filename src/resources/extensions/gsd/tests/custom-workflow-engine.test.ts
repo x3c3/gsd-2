@@ -193,7 +193,7 @@ describe("CustomWorkflowEngine.resolveDispatch", () => {
     }
   });
 
-  it("returns skip when pending steps are blocked by incomplete dependencies", async () => {
+  it("returns stop with dependency details when pending steps are blocked", async () => {
     const { engine } = setupEngine([
       makeStep({ id: "a", dependsOn: ["b"] }),
       makeStep({ id: "b", dependsOn: ["a"] }),
@@ -202,7 +202,45 @@ describe("CustomWorkflowEngine.resolveDispatch", () => {
     const state = await engine.deriveState("/unused");
     const dispatch = await engine.resolveDispatch(state, { basePath: "/unused" });
 
-    assert.deepEqual(dispatch, { action: "skip" });
+    assert.equal(dispatch.action, "stop");
+    if (dispatch.action === "stop") {
+      assert.equal(dispatch.level, "error");
+      assert.match(dispatch.reason, /Workflow blocked/);
+      assert.match(dispatch.reason, /a waiting on b \(pending\)/);
+      assert.match(dispatch.reason, /b waiting on a \(pending\)/);
+    }
+  });
+
+  it("reports missing dependencies when no pending step can run", async () => {
+    const { engine } = setupEngine([
+      makeStep({ id: "a", dependsOn: ["missing-step"] }),
+    ]);
+
+    const state = await engine.deriveState("/unused");
+    const dispatch = await engine.resolveDispatch(state, { basePath: "/unused" });
+
+    assert.equal(dispatch.action, "stop");
+    if (dispatch.action === "stop") {
+      assert.equal(dispatch.level, "error");
+      assert.match(dispatch.reason, /a waiting on missing-step \(missing\)/);
+    }
+  });
+
+  it("does not report expanded dependencies as blockers", async () => {
+    const { engine } = setupEngine([
+      makeStep({ id: "iter", status: "expanded" }),
+      makeStep({ id: "after", dependsOn: ["iter", "missing-step"] }),
+    ]);
+
+    const state = await engine.deriveState("/unused");
+    const dispatch = await engine.resolveDispatch(state, { basePath: "/unused" });
+
+    assert.equal(dispatch.action, "stop");
+    if (dispatch.action === "stop") {
+      assert.equal(dispatch.level, "error");
+      assert.match(dispatch.reason, /after waiting on missing-step \(missing\)/);
+      assert.doesNotMatch(dispatch.reason, /iter \(expanded\)/);
+    }
   });
 
   it("respects dependency ordering", async () => {
