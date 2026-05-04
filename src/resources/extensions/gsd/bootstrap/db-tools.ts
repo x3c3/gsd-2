@@ -1,3 +1,5 @@
+// Project/App: GSD-2
+// File Purpose: Registers DB-backed GSD workflow tools and compatibility aliases.
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 import { Text } from "@gsd/pi-tui";
@@ -8,6 +10,7 @@ import { loadWriteGateSnapshot, shouldBlockRootArtifactSaveInSnapshot } from "./
 import { StringEnum } from "@gsd/pi-ai";
 import { logError } from "../workflow-logger.js";
 import { getErrorMessage } from "../error-utils.js";
+import { incrementLegacyTelemetry } from "../legacy-telemetry.js";
 
 async function loadWorkflowExecutors(): Promise<typeof import("../tools/workflow-tool-executors.js")> {
   return import("../tools/workflow-tool-executors.js");
@@ -19,11 +22,19 @@ async function loadWorkflowExecutors(): Promise<typeof import("../tools/workflow
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- toolDef shape matches ToolDefinition but typing it fully requires generics
 function registerAlias(pi: ExtensionAPI, toolDef: any, aliasName: string, canonicalName: string): void {
+  const execute = typeof toolDef.execute === "function"
+    ? async (...args: any[]) => {
+        incrementLegacyTelemetry("legacy.mcpAliasUsed");
+        return toolDef.execute(...args);
+      }
+    : toolDef.execute;
+
   pi.registerTool({
     ...toolDef,
     name: aliasName,
     description: toolDef.description + ` (alias for ${canonicalName} — prefer the canonical name)`,
     promptGuidelines: [`Alias for ${canonicalName} — prefer the canonical name.`],
+    execute,
   });
 }
 
