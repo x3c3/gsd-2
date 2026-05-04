@@ -275,15 +275,13 @@ function gitPathspecForWorktreePath(basePath: string, targetPath: string): strin
   let target = targetPath;
   try {
     base = realpathSync.native(basePath);
-  } catch {
-    /* keep original */
-    void base;
+  } catch (err) {
+    logWarning("worktree", `base realpath failed; using original path: ${err instanceof Error ? err.message : String(err)}`);
   }
   try {
     target = realpathSync.native(targetPath);
-  } catch {
-    /* keep original */
-    void target;
+  } catch (err) {
+    logWarning("worktree", `target realpath failed; using original path: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   const rel = relative(base, target);
