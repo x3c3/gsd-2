@@ -28,6 +28,7 @@ jobs:
     outputs:
       docs-only: ${{ steps.check.outputs.docs-only }}
       portability-changed: ${{ steps.check.outputs.portability-changed }}
+      docker-changed: ${{ steps.check.outputs.docker-changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -66,6 +67,15 @@ jobs:
           else
             echo "portability-changed=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No portability-relevant changes detected — skipping portability matrix jobs"
+          fi
+          DOCKER=$(echo "$NON_DOCS" | grep -E '^(Dockerfile$|docker/|scripts/install\.js$|scripts/.*\.cjs$|scripts/.*\.mjs$|package\.json$|package-lock\.json$|src/|packages/|tests/e2e/docker/)' || true)
+          if [ -n "$DOCKER" ]; then
+            echo "docker-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Docker-relevant files changed:"
+            echo "$DOCKER"
+          else
+            echo "docker-changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Docker-relevant changes detected — skipping docker-e2e"
           fi
 
   docs-check:
@@ -302,6 +312,35 @@ jobs:
           path: test-results/e2e
           if-no-files-found: ignore
           retention-days: 7
+
+  docker-e2e:
+    # Builds the runtime-local Dockerfile target from the current source
+    # (npm pack + COPY into image) and runs `gsd --version` inside the
+    # container. Catches missing system deps, broken postinstall, missing
+    # tarball files. Gated by detect-changes so doc-only PRs skip it.
+    # No untrusted GitHub event input is consumed in run: blocks.
+    timeout-minutes: 20
+    needs: detect-changes
+    if: >-
+      needs.detect-changes.outputs.docs-only != 'true' &&
+      needs.detect-changes.outputs.docker-changed == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run docker e2e suite
+        run: npm run test:e2e:docker
 
   windows-portability:
     timeout-minutes: 25

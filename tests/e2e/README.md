@@ -17,6 +17,19 @@ GSD_SMOKE_BINARY="$(pwd)/dist/loader.js" npm run test:e2e
 If `GSD_SMOKE_BINARY` is not set, the suite falls back to whatever `gsd`
 resolves on PATH (matching the convention used by `tests/live-regression`).
 
+### Docker e2e (separate suite)
+
+The Docker runtime smoke is a separate, slower suite. It builds the
+`runtime-local` Dockerfile target from a `npm pack` tarball and runs the
+binary inside the container.
+
+```bash
+npm run test:e2e:docker
+```
+
+Skipped automatically if `docker` is not on PATH. CI runs this only on
+Docker-relevant changes (Dockerfile, scripts/, package*.json, src/, etc.).
+
 ## Writing a new e2e test
 
 1. Create `tests/e2e/<feature>.e2e.test.ts`. The `.e2e.test.ts` suffix is
