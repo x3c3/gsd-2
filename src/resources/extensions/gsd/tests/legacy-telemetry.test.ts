@@ -12,6 +12,7 @@ import {
   getLegacyTelemetry,
   incrementLegacyTelemetry,
   listLegacyTelemetryCounters,
+  persistLegacyTelemetrySnapshot,
   resetLegacyTelemetry,
 } from "../legacy-telemetry.ts";
 import { closeDatabase } from "../gsd-db.ts";
@@ -86,6 +87,34 @@ test("legacy telemetry can persist an opt-in snapshot file", () => {
     _resetLogs();
     resetLegacyTelemetry();
     setStderrLoggingEnabled(previousStderr);
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("legacy telemetry can persist a zero-use snapshot for deletion gates", () => {
+  const previousOutput = process.env.GSD_LEGACY_TELEMETRY_FILE;
+  const base = mkdtempSync(join(tmpdir(), "gsd-legacy-zero-telemetry-"));
+  const outputPath = join(base, "legacy-telemetry.json");
+  try {
+    resetLegacyTelemetry();
+    process.env.GSD_LEGACY_TELEMETRY_FILE = outputPath;
+
+    persistLegacyTelemetrySnapshot();
+
+    const report = JSON.parse(readFileSync(outputPath, "utf-8")) as ReturnType<typeof getLegacyTelemetryReport>;
+    assert.equal(typeof report.ts, "string");
+    assert.deepEqual(report.counters, {
+      "legacy.markdownFallbackUsed": 0,
+      "legacy.workflowEngineUsed": 0,
+      "legacy.uokFallbackUsed": 0,
+      "legacy.mcpAliasUsed": 0,
+      "legacy.componentFormatUsed": 0,
+      "legacy.providerDefaultUsed": 0,
+    });
+  } finally {
+    if (previousOutput === undefined) delete process.env.GSD_LEGACY_TELEMETRY_FILE;
+    else process.env.GSD_LEGACY_TELEMETRY_FILE = previousOutput;
+    resetLegacyTelemetry();
     rmSync(base, { recursive: true, force: true });
   }
 });

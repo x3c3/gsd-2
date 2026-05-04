@@ -45,6 +45,8 @@ const DIAGNOSTICS: Record<LegacyTelemetryCounter, string> = {
   "legacy.providerDefaultUsed": "Provider-specific default fallback used without an explicit available model; configure provider-aware model preferences before removing defaults.",
 };
 
+process.once("beforeExit", persistLegacyTelemetry);
+
 export function incrementLegacyTelemetry(counter: LegacyTelemetryCounter, amount = 1): void {
   if (!Number.isFinite(amount) || amount <= 0) return;
   values[counter] += amount;
@@ -72,6 +74,10 @@ export function getLegacyTelemetryReport(): LegacyTelemetryReport {
     ts: new Date().toISOString(),
     counters: getLegacyTelemetry(),
   };
+}
+
+export function persistLegacyTelemetrySnapshot(): void {
+  persistLegacyTelemetry();
 }
 
 function emitLegacyDiagnostic(counter: LegacyTelemetryCounter): void {
