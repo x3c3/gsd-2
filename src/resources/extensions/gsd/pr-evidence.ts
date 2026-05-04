@@ -11,6 +11,7 @@ export interface PrEvidenceInput {
   changeType?: PrChangeType;
   linkedIssue?: string;
   summaries?: string[];
+  blockers?: string[];
   roadmapItems?: string[];
   metrics?: string[];
   testsRun?: string[];
@@ -56,6 +57,7 @@ export function buildPrEvidence(input: PrEvidenceInput): PrEvidence {
   const subjectTitle = input.milestoneTitle?.trim() || subjectId;
   const changeType = input.changeType ?? "feat";
   const summaries = normalizeList(input.summaries);
+  const blockers = normalizeList(input.blockers);
   const roadmapItems = normalizeList(input.roadmapItems);
   const metrics = normalizeList(input.metrics);
   const testsRun = normalizeList(input.testsRun);
@@ -75,6 +77,13 @@ export function buildPrEvidence(input: PrEvidenceInput): PrEvidence {
     "## What",
     "",
     summaries.length > 0 ? summaries.join("\n\n") : `${capitalize(subjectKind)} ${subjectId} completed.`,
+  ];
+
+  if (blockers.length > 0) {
+    sections.push("", "## Blockers", "", blockers.map((blocker) => `- ${blocker}`).join("\n"));
+  }
+
+  sections.push(
     "",
     "## Why",
     "",
@@ -87,7 +96,7 @@ export function buildPrEvidence(input: PrEvidenceInput): PrEvidence {
     "## Linked Issue",
     "",
     linkedIssue,
-  ];
+  );
 
   if (roadmapItems.length > 0) {
     sections.push("", "## Roadmap", "", roadmapItems.join("\n"));
