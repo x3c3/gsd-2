@@ -187,7 +187,7 @@ export async function runUnit(
   debugLog("runUnit", { phase: "send-message", unitType, unitId });
 
   const requestDispatchedAt = Date.now();
-  ctx.ui.setWorkingMessage(formatAutoUnitWorkingMessage(unitType, unitId));
+  ctx.ui.setWorkingMessage?.(formatAutoUnitWorkingMessage(unitType, unitId));
 
   // ── Await agent_end with absolute timeout (H4 fix) ──
   // If supervision fails to resolve unitPromise within 30s, treat as cancelled.
@@ -216,7 +216,7 @@ export async function runUnit(
     );
   } finally {
     if (unitTimeoutHandle) clearTimeout(unitTimeoutHandle);
-    ctx.ui.setWorkingMessage(undefined);
+    ctx.ui.setWorkingMessage?.(undefined);
   }
   debugLog("runUnit", {
     phase: "agent-end-received",
