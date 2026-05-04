@@ -59,8 +59,8 @@ Narrate decomposition reasoning: what the sketch promised, what prior slices cha
 Then:
 0. If `REQUIREMENTS.md` was preloaded, identify Active requirements the sketch owns/supports. Each owned requirement needs at least one task that advances it.
 1. Read the templates:
-   - `{{templatesDir}}/plan.md`
-   - `{{templatesDir}}/task-plan.md`
+   - `{{planTemplatePath}}`
+   - `{{taskPlanTemplatePath}}`
 2. {{skillActivation}} Record the installed skills you expect executors to use in each task plan's `skills_used` frontmatter.
 3. Define slice-level verification: the objective stopping condition. Plan real test files with real assertions; for simple slices, executable commands are fine.
 4. For non-trivial slices, plan observability / proof level / integration closure, threat surface, and requirement impact. Omit entirely for simple slices.

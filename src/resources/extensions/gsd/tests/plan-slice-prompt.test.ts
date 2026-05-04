@@ -31,6 +31,8 @@ const BASE_VARS = {
   dependencySummaries: "", executorContextConstraints: "",
   sourceFilePaths: "- **Requirements**: `.gsd/REQUIREMENTS.md`",
   templatesDir: join(fixtureRoot, "templates"),
+  planTemplatePath: "C:\\Users\\Test\\.gsd\\agent\\extensions\\gsd\\templates\\plan.md",
+  taskPlanTemplatePath: "C:\\Users\\Test\\.gsd\\agent\\extensions\\gsd\\templates\\task-plan.md",
   skillActivation: "Load the relevant skills.",
 };
 
@@ -72,6 +74,10 @@ test("plan-slice prompt: compact planning gates survive template substitution", 
   assert.ok(result.includes("Bias toward \"roadmap is fine.\""), "roadmap reassessment brake should remain visible");
   assert.ok(result.includes("Self-audit before finishing"), "self-audit gate should remain visible");
   assert.ok(result.includes("Quality gates: non-trivial slices/tasks include specific Q3-Q7 coverage where applicable."));
+  assert.ok(result.includes("C:\\Users\\Test\\.gsd\\agent\\extensions\\gsd\\templates\\plan.md"));
+  assert.ok(result.includes("C:\\Users\\Test\\.gsd\\agent\\extensions\\gsd\\templates\\task-plan.md"));
+  assert.ok(!result.includes("{{templatesDir}}/plan.md"));
+  assert.ok(!result.includes("{{templatesDir}}/task-plan.md"));
   assert.ok(!result.includes("{{"));
 });
 

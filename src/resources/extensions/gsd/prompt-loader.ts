@@ -156,6 +156,8 @@ export function loadPrompt(name: string, vars: Record<string, string> = {}): str
 
   const effectiveVars = {
     templatesDir: getTemplatesDir(),
+    planTemplatePath: join(getTemplatesDir(), "plan.md"),
+    taskPlanTemplatePath: join(getTemplatesDir(), "task-plan.md"),
     taskSummaryTemplatePath: join(getTemplatesDir(), "task-summary.md"),
     skillActivation: "If a `GSD Skill Preferences` block is present in system context, use it and the `<available_skills>` catalog in your system prompt to decide which skills to load and follow for this unit, without relaxing required verification or artifact rules.",
     ...vars,

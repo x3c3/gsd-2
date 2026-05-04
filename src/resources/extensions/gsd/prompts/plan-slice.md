@@ -69,8 +69,8 @@ Then:
 0. If `REQUIREMENTS.md` is preloaded, identify Active requirements this slice owns/supports. Owned requirements are acceptance criteria needing task coverage plus verification. Supporting requirements are compatibility constraints; do not pull later primary work into this slice unless assigned.
 0a. Call `memory_query` with keywords from the slice title and source files. Use prior decisions, conventions, and gotchas to inform decomposition.
 1. Read the templates:
-   - `{{templatesDir}}/plan.md`
-   - `{{templatesDir}}/task-plan.md`
+   - `{{planTemplatePath}}`
+   - `{{taskPlanTemplatePath}}`
 2. {{skillActivation}} Record expected executor skills in each task plan's `skills_used` frontmatter.
 3. Define slice-level verification:
    - For non-trivial slices: plan actual test files with real assertions. Name the files.
