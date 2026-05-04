@@ -408,6 +408,8 @@ Baseline usage is documented in `docs/dev/refactor-baseline-runbook.md`.
 
 **Exit gate:** Auto pause/resume/recovery/worktree/milestone tests pass through the facade and pure kernel tests cover dispatch decisions.
 
+**Closeout status (2026-05-04):** Phase 4 SRC-first workflow-kernel extraction is closed. `auto/loop.ts` remains the compatibility facade, while repeated loop responsibilities now sit behind small source-owned adapters for phase/journal/turn reporting, session-lock validation, worker heartbeat, memory pressure, dispatch claims, dispatch ledger settling, sidecar queue dequeue, sidecar/custom-engine iteration data, unit dispatch, request timestamp resolution, iteration completion cleanup, custom verify retry persistence, custom-engine dispatch outcomes, verify outcomes, reconcile handling, and reconcile outcomes. Pure kernel decisions are covered in `src/resources/extensions/gsd/tests/workflow-kernel.test.ts`; side-effect adapters have direct `node:test` coverage; facade behavior is covered by `src/resources/extensions/gsd/tests/auto-loop.test.ts` and `src/resources/extensions/gsd/tests/custom-engine-loop-integration.test.ts`. Latest gate used targeted adapter tests, custom-engine integration, `auto-loop`, `npm run test:changed:src -- --since HEAD~1`, and `npm run baseline:refactor:gate`.
+
 ## Phase 5: DB Split Plan
 
 **Goal:** Preserve the single-writer invariant while splitting the DB implementation into maintainable modules.
