@@ -726,6 +726,10 @@ export class ExtensionRunner {
 		};
 	}
 
+	private isShutdownGuardedEvent(eventType: string): boolean {
+		return eventType === "agent_end" || eventType === "stop" || eventType === "session_end";
+	}
+
 	createCommandContext(): ExtensionCommandContext {
 		return {
 			...this.createContext(),
@@ -766,7 +770,9 @@ export class ExtensionRunner {
 		getEvent: () => unknown,
 		processResult: (handlerResult: unknown, extensionPath: string) => { done: boolean },
 	): Promise<void> {
-		const ctx = this.createEventContext(eventType);
+		const ctx = this.isShutdownGuardedEvent(eventType)
+			? this.createEventContext(eventType)
+			: this.createContext();
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(eventType);
