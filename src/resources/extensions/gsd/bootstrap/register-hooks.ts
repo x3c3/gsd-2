@@ -7,7 +7,7 @@ import type { GSDEcosystemBeforeAgentStartHandler } from "../ecosystem/gsd-exten
 import { updateSnapshot } from "../ecosystem/gsd-extension-api.js";
 
 import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
-import { canonicalToolName, clearDiscussionFlowState, isDepthConfirmationAnswer, isQueuePhaseActive, markApprovalGateVerified, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockPlanningUnit, shouldBlockQueueExecution, isGateQuestionId, setPendingGate, clearPendingGate, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId } from "./write-gate.js";
+import { canonicalToolName, clearDiscussionFlowState, isDepthConfirmationAnswer, isQueuePhaseActive, markApprovalGateVerified, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockPlanningUnit, shouldBlockQueueExecution, shouldBlockWorktreeWrite, isGateQuestionId, setPendingGate, clearPendingGate, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId } from "./write-gate.js";
 import { resolveManifest } from "../unit-context-manifest.js";
 import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
@@ -480,6 +480,22 @@ export function registerHooks(
         );
         if (planningGuard.block) return planningGuard;
       }
+    }
+
+    // ── Worktree-isolation write gate (#5199) ────────────────────────────
+    // Block planning-write tools from landing code at the project root when
+    // git.isolation=worktree but auto-mode hasn't created the milestone
+    // worktree yet. Without this, writes silently orphan outside git history.
+    if (isToolCallEventType("write", event) || isToolCallEventType("edit", event)) {
+      const wtBasePath = resolveWorktreeProjectRoot(dash.basePath ?? discussionBasePath);
+      const wtGuard = shouldBlockWorktreeWrite(
+        event.toolName,
+        event.input.path,
+        wtBasePath,
+        isAutoActive(),
+        dash.currentUnit?.type,
+      );
+      if (wtGuard.block) return wtGuard;
     }
 
     // ── Single-writer engine: block direct writes to STATE.md ──────────
