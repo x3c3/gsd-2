@@ -118,6 +118,22 @@ export function resolveExpectedArtifactPathForScope(
   return resolveExpectedArtifactPath(unitType, unitId, scope.workspace.projectRoot);
 }
 
+async function runQuickTaskChoice(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+  if (!ctx.hasUI) {
+    ctx.ui.notify("Run /gsd quick <task> for small bounded work, or /gsd do <task> for natural-language routing.", "info");
+    return;
+  }
+
+  const task = (await ctx.ui.input("Quick task", "Describe the small task to run with /gsd quick"))?.trim();
+  if (!task) {
+    ctx.ui.notify("Quick task cancelled.", "info");
+    return;
+  }
+
+  const { handleQuick } = await import("./quick.js");
+  await handleQuick(task, ctx, pi);
+}
+
 /**
  * Scope-based overload of isGhostMilestone.
  * Binds basePath and milestoneId from the scope, ensuring path resolution
@@ -2150,7 +2166,7 @@ export async function showSmartEntry(
       });
 
       if (choice === "quick_task") {
-        ctx.ui.notify("Run /gsd quick <task> for small bounded work, or /gsd do <task> for natural-language routing.", "info");
+        await runQuickTaskChoice(ctx, pi);
       } else if (choice === "new_milestone") {
         setPendingAutoStart(basePath, { ctx, pi, basePath, milestoneId: nextId, step: stepMode });
         await dispatchWorkflow(pi, await prepareAndBuildDiscussPrompt(ctx, pi, nextId,
@@ -2209,7 +2225,7 @@ export async function showSmartEntry(
     });
 
     if (choice === "quick_task") {
-      ctx.ui.notify("Run /gsd quick <task> for small bounded work, or /gsd do <task> for natural-language routing.", "info");
+      await runQuickTaskChoice(ctx, pi);
     } else if (choice === "new_milestone") {
       const milestoneIds = findMilestoneIds(basePath);
       const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
@@ -2352,7 +2368,7 @@ export async function showSmartEntry(
       });
 
       if (choice === "quick_task") {
-        ctx.ui.notify("Run /gsd quick <task> for small bounded work, or /gsd do <task> for natural-language routing.", "info");
+        await runQuickTaskChoice(ctx, pi);
       } else if (choice === "plan") {
         setPendingAutoStart(basePath, { ctx, pi, basePath, milestoneId, step: stepMode });
         await dispatchWorkflow(

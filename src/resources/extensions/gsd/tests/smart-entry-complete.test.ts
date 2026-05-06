@@ -59,6 +59,26 @@ test("guided-flow complete branch offers a chooser for next milestone or status"
   assert.match(branchChunk, /dispatchWorkflow\(pi, await prepareAndBuildDiscussPrompt\(/, "complete branch should dispatch the prepared discuss prompt");
 });
 
+test("guided-flow quick task choices prompt for text and route through /gsd quick", () => {
+  const guidedFlowSource = readFileSync(join(import.meta.dirname, "..", "guided-flow.ts"), "utf-8");
+
+  assert.match(
+    guidedFlowSource,
+    /async function runQuickTaskChoice\([\s\S]*ctx\.ui\.input\("Quick task"[\s\S]*await import\("\.\/quick\.js"\)[\s\S]*await handleQuick\(task,\s*ctx,\s*pi\)/,
+    "quick task chooser should prompt for task text and route through handleQuick",
+  );
+
+  const notifyOnlyPattern = /if \(choice === "quick_task"\) \{\s*ctx\.ui\.notify\("Run \/gsd quick <task>/;
+  assert.doesNotMatch(
+    guidedFlowSource,
+    notifyOnlyPattern,
+    "quick task chooser must not merely print instructions after selection",
+  );
+
+  const quickChoiceCalls = guidedFlowSource.match(/if \(choice === "quick_task"\) \{\s*await runQuickTaskChoice\(ctx,\s*pi\);/g) ?? [];
+  assert.equal(quickChoiceCalls.length, 3, "all guided-flow quick task choices should dispatch the helper");
+});
+
 test("dispatcher routes multi-word freeform /gsd input through /gsd do", () => {
   const dispatcherSource = readFileSync(join(import.meta.dirname, "..", "commands", "dispatcher.ts"), "utf-8");
 
