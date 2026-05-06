@@ -68,6 +68,8 @@ import {
   settleDispatchCompleted,
   settleDispatchFailed,
 } from "./workflow-dispatch-ledger.js";
+import { emitOpenUnitEndForUnit } from "../crash-recovery.js";
+import { writeUnitRuntimeRecord } from "../unit-runtime.js";
 import { openDispatchClaim } from "./workflow-dispatch-claim.js";
 import { completeWorkflowIteration } from "./workflow-iteration-completion.js";
 import { createWorkflowJournalReporter } from "./workflow-journal-reporter.js";
@@ -699,6 +701,32 @@ export async function autoLoop(
       } catch (err) {
         if (err instanceof ModelPolicyDispatchBlockedError) {
           throw err;
+        }
+        try {
+          emitOpenUnitEndForUnit(
+            s.basePath,
+            iterData.unitType,
+            iterData.unitId,
+            "cancelled",
+            {
+              message: formatDispatchExceptionSummary({ error: err }),
+              category: "unit-exception",
+              isTransient: false,
+            },
+          );
+          writeUnitRuntimeRecord(
+            s.basePath,
+            iterData.unitType,
+            iterData.unitId,
+            s.currentUnit?.startedAt ?? Date.now(),
+            {
+              phase: "crashed",
+              lastProgressAt: Date.now(),
+              lastProgressKind: "unit-exception",
+            },
+          );
+        } catch {
+          // Best-effort observability: the original exception still controls flow.
         }
         dispatchSettled = settleDispatchFailed(
           dispatchId,
