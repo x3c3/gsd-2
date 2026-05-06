@@ -37,6 +37,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       docs-only: ${{ steps.check.outputs.docs-only }}
+      heavy-code-changed: ${{ steps.check.outputs.heavy-code-changed }}
       portability-changed: ${{ steps.check.outputs.portability-changed }}
       windows-e2e-changed: ${{ steps.check.outputs.windows-e2e-changed }}
       docker-changed: ${{ steps.check.outputs.docker-changed }}
@@ -71,6 +72,15 @@ jobs:
             echo "docs-only=false" >> "$GITHUB_OUTPUT"
             echo "Non-docs files changed:"
             echo "$NON_DOCS"
+          fi
+          HEAVY_CODE=$(echo "$NON_DOCS" | grep -E '^(src/|packages/|native/|scripts/|web/|studio/|extensions/|tests/|Dockerfile$|docker/|package\.json$|package-lock\.json$|tsconfig[^/]*\.json$|packages/.*/tsconfig\.json$)' || true)
+          if [ -n "$HEAVY_CODE" ]; then
+            echo "heavy-code-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Build/runtime-relevant files changed:"
+            echo "$HEAVY_CODE"
+          else
+            echo "heavy-code-changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No build/runtime-relevant changes detected — skipping heavy build/test jobs"
           fi
           PORTABILITY=$(echo "$NON_DOCS" | grep -E '^(src/|packages/|native/|scripts/|web/|package\.json$|package-lock\.json$|web/package-lock\.json$|tsconfig[^/]*\.json$|packages/.*/tsconfig\.json$)' || true)
           if [ -n "$PORTABILITY" ]; then
@@ -239,7 +249,7 @@ jobs:
   build:
     timeout-minutes: 25
     needs: [detect-changes, ci-circuit-breaker-fast, mergeability-gate]
-    if: needs.detect-changes.outputs.docs-only != 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
+    if: needs.detect-changes.outputs.heavy-code-changed == 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:
@@ -297,7 +307,7 @@ jobs:
     timeout-minutes: 2
     needs: [detect-changes, build, mergeability-gate]
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: always() && needs.detect-changes.outputs.docs-only != 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
+    if: always() && needs.detect-changes.outputs.heavy-code-changed == 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     steps:
       - name: Stop pipeline when build gate fails
         env:
@@ -311,7 +321,7 @@ jobs:
   integration-tests:
     timeout-minutes: 15
     needs: [detect-changes, ci-circuit-breaker-build, mergeability-gate]
-    if: needs.detect-changes.outputs.docs-only != 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
+    if: needs.detect-changes.outputs.heavy-code-changed == 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:
@@ -358,7 +368,7 @@ jobs:
     # No untrusted GitHub event input is consumed in run: blocks.
     timeout-minutes: 10
     needs: [detect-changes, ci-circuit-breaker-build, mergeability-gate]
-    if: needs.detect-changes.outputs.docs-only != 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
+    if: needs.detect-changes.outputs.heavy-code-changed == 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:
@@ -390,8 +400,8 @@ jobs:
     # ABI, migration chain, etc.) - see tests/e2e/README.md.
     # No untrusted GitHub event input is consumed in run: blocks.
     timeout-minutes: 15
-    needs: [detect-changes, mergeability-gate]
-    if: needs.detect-changes.outputs.docs-only != 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
+    needs: [detect-changes, ci-circuit-breaker-build, mergeability-gate]
+    if: needs.detect-changes.outputs.heavy-code-changed == 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:
@@ -425,6 +435,32 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  ci-circuit-breaker-linux-runtime:
+    timeout-minutes: 2
+    needs: [detect-changes, mergeability-gate, integration-tests, live-regression, e2e]
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: always() && needs.detect-changes.outputs.heavy-code-changed == 'true' && needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
+    steps:
+      - name: Stop expanded CI when Linux runtime fails
+        env:
+          INTEGRATION_TESTS: ${{ needs.integration-tests.result }}
+          LIVE_REGRESSION: ${{ needs.live-regression.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          failed=0
+          for check in \
+            "integration-tests=$INTEGRATION_TESTS" \
+            "live-regression=$LIVE_REGRESSION" \
+            "e2e=$E2E"
+          do
+            result="${check#*=}"
+            if [ "$result" != "success" ]; then
+              echo "::error::Linux runtime gate failed ($check). Cancelling expanded CI jobs."
+              failed=1
+            fi
+          done
+          exit "$failed"
+
   docker-e2e:
     # Builds the runtime-local Dockerfile target from the current source
     # (npm pack + COPY into image) and runs `gsd --version` inside the
@@ -432,9 +468,9 @@ jobs:
     # tarball files. Gated by detect-changes so doc-only PRs skip it.
     # No untrusted GitHub event input is consumed in run: blocks.
     timeout-minutes: 20
-    needs: [detect-changes, ci-circuit-breaker-fast, mergeability-gate]
+    needs: [detect-changes, ci-circuit-breaker-linux-runtime, mergeability-gate]
     if: >-
-      needs.detect-changes.outputs.docs-only != 'true' &&
+      needs.detect-changes.outputs.heavy-code-changed == 'true' &&
       needs.detect-changes.outputs.docker-changed == 'true' &&
       needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -462,72 +498,20 @@ jobs:
       - name: Run docker e2e suite
         run: npm run test:e2e:docker
 
-  e2e-windows:
-    # Runs the same `tests/e2e/` suite as the Linux `e2e` job, but on
-    # Windows. Catches Windows-specific regressions in path handling,
-    # temp-dir canonicalization, child-process env, and binary loader
-    # behavior that Linux/darwin runners miss.
-    #
-    # Non-blocking on purpose: continue-on-error is true while the
-    # surface stabilizes. Promotion criterion: 5 consecutive green runs
-    # on the same suite scope as the Linux `e2e` job, then drop the
-    # continue-on-error.
-    #
-    # No untrusted GitHub event input is consumed in run: blocks.
-    timeout-minutes: 10
-    needs: [detect-changes, ci-circuit-breaker-fast, mergeability-gate]
-    if: >-
-      needs.detect-changes.outputs.docs-only != 'true' &&
-      needs.detect-changes.outputs.windows-e2e-changed == 'true' &&
-      needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
-    runs-on: blacksmith-4vcpu-windows-2025
-    continue-on-error: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: Install dependencies
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-          GSD_SKIP_RTK_INSTALL: '1'
-        run: npm ci
-
-      - name: Build core
-        run: npm run build:core
-
-      - name: Run e2e suite (against built binary)
-        shell: bash
-        run: |
-          export GSD_SMOKE_BINARY="$(pwd)/dist/loader.js"
-          npm run test:e2e:windows-smoke
-
-      - name: Upload e2e artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-artifacts-windows
-          path: test-results/e2e
-          if-no-files-found: ignore
-          retention-days: 7
-
   e2e-windows-full:
     # Full Windows e2e is still exploratory. It has previously hung after
     # fake-LLM failures while child services remained alive, so keep it
     # manual until that suite is stable enough to promote.
+    #
+    # ci-circuit-breaker-linux-runtime is intentionally excluded from needs:
+    # if it were included and got skipped (heavy-code-changed=false), this job
+    # would also be silently skipped even on explicit workflow_dispatch, breaking
+    # the "human override always runs" contract.
     timeout-minutes: 25
-    needs: [detect-changes, ci-circuit-breaker-fast, mergeability-gate]
+    needs: [detect-changes, mergeability-gate]
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.full_windows_e2e == 'true' &&
-      needs.detect-changes.outputs.docs-only != 'true' &&
       needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-windows-2025
     continue-on-error: true
@@ -576,9 +560,9 @@ jobs:
     #
     # No untrusted GitHub event input is consumed in run: blocks.
     timeout-minutes: 15
-    needs: [detect-changes, ci-circuit-breaker-fast, mergeability-gate]
+    needs: [detect-changes, ci-circuit-breaker-linux-runtime, mergeability-gate]
     if: >-
-      needs.detect-changes.outputs.docs-only != 'true' &&
+      needs.detect-changes.outputs.heavy-code-changed == 'true' &&
       needs.detect-changes.outputs.studio-changed == 'true' &&
       needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -606,13 +590,19 @@ jobs:
         run: xvfb-run --auto-servernum npm run test:e2e -w @gsd/studio
 
   windows-portability:
+    # Consolidates the blocking Windows portability checks with the
+    # non-blocking Windows e2e smoke suite. When both path filters match, this
+    # avoids a second Windows runner, npm install, and build:core invocation.
     timeout-minutes: 25
-    needs: [detect-changes, ci-circuit-breaker-build, mergeability-gate]
+    needs: [detect-changes, ci-circuit-breaker-linux-runtime, mergeability-gate]
     if: >-
-      needs.detect-changes.outputs.docs-only != 'true' &&
-      needs.detect-changes.outputs.portability-changed == 'true' &&
+      needs.detect-changes.outputs.heavy-code-changed == 'true' &&
+      (needs.detect-changes.outputs.portability-changed == 'true' ||
+       needs.detect-changes.outputs.windows-e2e-changed == 'true') &&
       needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     runs-on: blacksmith-4vcpu-windows-2025
+    outputs:
+      smoke_result: ${{ steps.windows-smoke-e2e.outcome }}
 
     steps:
       - name: Checkout repository
@@ -637,12 +627,15 @@ jobs:
         run: npm run build:core
 
       - name: Typecheck extensions
+        if: needs.detect-changes.outputs.portability-changed == 'true'
         run: npm run typecheck:extensions
 
       - name: Run package tests
+        if: needs.detect-changes.outputs.portability-changed == 'true'
         run: npm run test:packages
 
       - name: Run Windows portability tests
+        if: needs.detect-changes.outputs.portability-changed == 'true'
         run: >-
           node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs
           --experimental-strip-types --test
@@ -650,11 +643,77 @@ jobs:
           src/resources/extensions/gsd/tests/validate-directory.test.ts
           src/tests/integration/web-mode-windows-hide.test.ts
 
+      - name: Run Windows e2e smoke suite (non-blocking)
+        id: windows-smoke-e2e
+        if: needs.detect-changes.outputs.windows-e2e-changed == 'true'
+        timeout-minutes: 10
+        shell: bash
+        continue-on-error: true
+        run: |
+          export GSD_SMOKE_BINARY="$(pwd)/dist/loader.js"
+          npm run test:e2e:windows-smoke
+
+      - name: Upload Windows e2e artifacts on failure
+        if: steps.windows-smoke-e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts-windows
+          path: test-results/e2e
+          if-no-files-found: ignore
+          retention-days: 7
+
+  e2e-windows:
+    # Compatibility/status shim to preserve the historical e2e-windows check
+    # name while the smoke suite runs in windows-portability. Reflects the
+    # smoke step outcome so the failure signal is not swallowed by the
+    # upstream job's continue-on-error step. The job itself remains
+    # non-blocking via continue-on-error.
+    timeout-minutes: 5
+    needs: [detect-changes, mergeability-gate, windows-portability]
+    if: >-
+      always() &&
+      needs.detect-changes.outputs.heavy-code-changed == 'true' &&
+      needs.detect-changes.outputs.windows-e2e-changed == 'true' &&
+      needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    continue-on-error: true
+
+    steps:
+      - name: Report Windows smoke outcome
+        env:
+          PORTABILITY_RESULT: ${{ needs.windows-portability.result }}
+          SMOKE_RESULT: ${{ needs.windows-portability.outputs.smoke_result }}
+        run: |
+          echo "Windows e2e smoke runs in windows-portability."
+          echo "windows-portability result: $PORTABILITY_RESULT"
+          echo "Smoke step outcome: ${SMOKE_RESULT:-<unset>}"
+          # If the upstream job failed/cancelled before the smoke step ran,
+          # surface that instead of mis-reporting it as "did not run".
+          if [ -z "$SMOKE_RESULT" ] && [ "$PORTABILITY_RESULT" != "success" ] && [ "$PORTABILITY_RESULT" != "skipped" ]; then
+            echo "::warning::windows-portability ended in $PORTABILITY_RESULT before Windows e2e smoke ran (non-blocking). See windows-portability logs."
+            exit 1
+          fi
+          case "${SMOKE_RESULT:-skipped}" in
+            success)
+              echo "::notice::Windows e2e smoke succeeded."
+              ;;
+            failure)
+              echo "::warning::Windows e2e smoke failed (non-blocking). See windows-portability artifacts."
+              exit 1
+              ;;
+            skipped)
+              echo "::notice::Windows e2e smoke did not run (no relevant changes)."
+              ;;
+            *)
+              echo "::notice::Windows e2e smoke outcome: $SMOKE_RESULT"
+              ;;
+          esac
+
   rtk-portability:
     timeout-minutes: 20
-    needs: [detect-changes, ci-circuit-breaker-build, mergeability-gate]
+    needs: [detect-changes, ci-circuit-breaker-linux-runtime, mergeability-gate]
     if: >-
-      needs.detect-changes.outputs.docs-only != 'true' &&
+      needs.detect-changes.outputs.heavy-code-changed == 'true' &&
       needs.detect-changes.outputs.rtk-changed == 'true' &&
       needs.mergeability-gate.outputs.skip-heavy-jobs != 'true'
     strategy:
