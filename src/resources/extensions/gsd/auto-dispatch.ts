@@ -1015,7 +1015,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // skip so the next loop re-derives phase from corrected DB state.
       if (isDbAvailable()) {
         const planFile = resolveSliceFile(basePath, mid, sid, "PLAN");
-        if (planFile) {
+        if (planFile && existsSync(planFile)) {
           setSliceSketchFlag(mid, sid, false);
           return { action: "skip" };
         }
