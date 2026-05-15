@@ -327,10 +327,11 @@ async function applyCompactionThresholdOverride(ctx: ExtensionContext): Promise<
     const prefs = loadEffectiveGSDPreferences();
     const raw = prefs?.preferences.context_management?.compaction_threshold_percent;
     const value =
-      typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw < 1 ? raw : undefined;
+      typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw < 1 ? raw : 0.6;
     ctx.setCompactionThresholdOverride(value);
   } catch {
-    // Non-fatal: leave any existing override in place.
+    // Non-fatal: use conservative default when preferences cannot be loaded.
+    ctx.setCompactionThresholdOverride(0.6);
   }
 }
 
