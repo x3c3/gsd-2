@@ -20,7 +20,8 @@ export interface RepositoryRegistry {
 }
 
 export function defaultRepositoryTargets(registry: RepositoryRegistry): string[] {
-  if (registry.byId.has("project")) return ["project"];
+  const project = registry.byId.get("project");
+  if (project) return [project.id];
   const first = registry.repositories[0];
   return first ? [first.id] : [];
 }

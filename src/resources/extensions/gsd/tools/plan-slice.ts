@@ -167,18 +167,21 @@ function loadRepositoryRegistry(basePath: string): RepositoryRegistry {
   return createRepositoryRegistryFromPreferences(basePath, loaded?.preferences);
 }
 
-function validateReferencedRepositories(params: PlanSliceParams, registry: RepositoryRegistry): string | null {
+function validateReferencedRepositories(
+  params: PlanSliceParams,
+  registry: RepositoryRegistry,
+  defaultTargets: string[],
+): string | null {
   const known = new Set(registry.repositories.map((repo) => repo.id));
-  const defaults = defaultRepositoryTargets(registry);
 
   const missing: string[] = [];
   const noteMissing = (id: string) => {
     if (!known.has(id) && !missing.includes(id)) missing.push(id);
   };
 
-  for (const id of params.targetRepositories ?? defaults) noteMissing(id);
+  for (const id of params.targetRepositories ?? defaultTargets) noteMissing(id);
   for (const task of params.tasks) {
-    for (const id of task.targetRepositories ?? params.targetRepositories ?? defaults) noteMissing(id);
+    for (const id of task.targetRepositories ?? params.targetRepositories ?? defaultTargets) noteMissing(id);
   }
 
   if (missing.length === 0) return null;
@@ -263,7 +266,7 @@ export async function handlePlanSlice(
 
   const repositoryRegistry = loadRepositoryRegistry(basePath);
   const defaultTargets = defaultRepositoryTargets(repositoryRegistry);
-  const repoValidationError = validateReferencedRepositories(params, repositoryRegistry);
+  const repoValidationError = validateReferencedRepositories(params, repositoryRegistry, defaultTargets);
   if (repoValidationError) {
     return { error: `validation failed: ${repoValidationError}` };
   }
