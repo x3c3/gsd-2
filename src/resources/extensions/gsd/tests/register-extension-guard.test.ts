@@ -48,7 +48,7 @@ test("handleRecoverableExtensionProcessError swallows uv_cwd ENOENT", () => {
   }
 });
 
-test("handleRecoverableExtensionProcessError swallows EIO", () => {
+test("handleRecoverableExtensionProcessError swallows read EIO", () => {
 	let stderr = "";
 	const originalWrite = process.stderr.write.bind(process.stderr);
 	process.stderr.write = ((chunk: string | Uint8Array) => {
@@ -68,6 +68,16 @@ test("handleRecoverableExtensionProcessError swallows EIO", () => {
 	} finally {
 		process.stderr.write = originalWrite;
 	}
+});
+
+test("handleRecoverableExtensionProcessError leaves non-read EIO unhandled", () => {
+  const handled = handleRecoverableExtensionProcessError(
+    Object.assign(new Error("open EIO"), {
+      code: "EIO",
+      syscall: "open",
+    }),
+  );
+  assert.equal(handled, false);
 });
 
 test("handleRecoverableExtensionProcessError leaves unrelated errors unhandled", () => {
