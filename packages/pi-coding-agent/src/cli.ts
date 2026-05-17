@@ -10,19 +10,10 @@ process.title = "pi";
 import { setBedrockProviderModule } from "@gsd/pi-ai";
 import { bedrockProviderModule } from "@gsd/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { installAbortSignalTimeoutReasonListener } from "./cli/abort-signal-timeout.js";
 import { main } from "./main.js";
 
-// Node v24 may surface AbortSignal.timeout() abort reasons as uncaught exceptions
-// in some call paths. Ensure each timeout signal has an abort listener attached.
-const originalAbortSignalTimeout = AbortSignal.timeout.bind(AbortSignal);
-AbortSignal.timeout = ((delay: number) => {
-	const signal = originalAbortSignalTimeout(delay);
-	signal.addEventListener("abort", () => {
-		void signal.reason;
-	}, { once: true });
-	return signal;
-}) as typeof AbortSignal.timeout;
-
+installAbortSignalTimeoutReasonListener();
 setGlobalDispatcher(new EnvHttpProxyAgent());
 setBedrockProviderModule(bedrockProviderModule);
 
