@@ -241,6 +241,7 @@ jobs:
             // Flag misaligned issues/PRs
             if (!result.aligned) {
               // Add needs-review label
+              await ensureCanonicalLabels(['needs-review']);
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
