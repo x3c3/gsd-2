@@ -34,7 +34,7 @@ Use `subagent` only when useful: reviewer (cross-cutting code/abstractions), sec
 8. Address every gate in Gates to Close. Q8 = **Operational Readiness**: health signal, failure signal, recovery procedure, monitoring gaps. Empty sections are omitted.
 9. If requirement status changed, call `gsd_requirement_update`; do not write `.gsd/REQUIREMENTS.md` directly.
 10. Prepare `gsd_slice_complete` content with camelCase fields `milestoneId`, `sliceId`, `sliceTitle`, `oneLiner`, `narrative`, `verification`, and `uatContent`.
-11. Draft concrete UAT with preconditions, steps, expected outcomes, edge cases, UAT Type, and Not Proven By This UAT.
+11. Draft concrete UAT with preconditions, steps, expected outcomes, edge cases, and UAT Type.
 12. Review the inlined task-summary excerpts for DECISIONS.md/KNOWLEDGE.md-worthy decisions and gotchas. Read full `*-SUMMARY.md` only when an excerpt is absent, truncated, or lacks needed evidence. Capture with `capture_thought`; do not append knowledge files directly.
 13. When verification passes, call `gsd_slice_complete`. The DB-backed tool is the canonical write path. Do **not** manually write `{{sliceSummaryPath}}`. Do **not** manually write `{{sliceUatPath}}`. Do not edit roadmap checkboxes; the tool renders files and updates projections.
 14. Do not run git commands.
