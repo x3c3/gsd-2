@@ -57,6 +57,24 @@ describe("collapsible message components", () => {
 		assert.match(plain(component), /Detailed compacted context survives here/);
 	});
 
+	test("reuses framed compaction renders until collapsed state changes", () => {
+		const component = new CompactionSummaryMessageComponent({
+			role: "compactionSummary",
+			summary: "Detailed compacted context survives here.",
+			tokensBefore: 1234,
+			timestamp: 1,
+		});
+
+		const collapsed = component.render(80);
+		assert.equal(component.render(80), collapsed);
+
+		component.setExpanded(true);
+		const expanded = component.render(80);
+
+		assert.notEqual(expanded, collapsed);
+		assert.match(expanded.map((line) => stripAnsi(line)).join("\n"), /Detailed compacted context survives here/);
+	});
+
 	test("toggles skill invocations without losing expanded state on invalidate", () => {
 		const component = new SkillInvocationMessageComponent({
 			name: "review",

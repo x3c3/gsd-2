@@ -95,4 +95,36 @@ describe("UserMessageComponent open surface", () => {
 			},
 		);
 	});
+
+	test("reuses rendered output until terminal integration state changes", () => {
+		const component = new UserMessageComponent("Cached user output");
+		let first: string[] | undefined;
+
+		withEnv(
+			{
+				TERM_PROGRAM: "Apple_Terminal",
+				GSD_ENABLE_OSC133_ZONES: undefined,
+				GSD_DISABLE_OSC133_ZONES: undefined,
+			},
+			() => {
+				first = component.render(100);
+				assert.equal(component.render(100), first);
+				assert.doesNotMatch(first.join("\n"), OSC133_ZONE);
+			},
+		);
+
+		withEnv(
+			{
+				TERM_PROGRAM: "Apple_Terminal",
+				GSD_ENABLE_OSC133_ZONES: "1",
+				GSD_DISABLE_OSC133_ZONES: undefined,
+			},
+			() => {
+				const withOsc = component.render(100);
+
+				assert.notEqual(withOsc, first);
+				assert.match(withOsc.join("\n"), OSC133_ZONE);
+			},
+		);
+	});
 });

@@ -56,6 +56,9 @@ export class CompactionSummaryMessageComponent extends CollapsibleMessageCompone
 	}
 
 	override render(width: number): string[] {
+		const cached = this.getCachedRender(width);
+		if (cached) return cached;
+
 		const frameWidth = Math.max(20, width);
 		const contentWidth = Math.max(1, frameWidth - 4);
 		const lines = super.render(contentWidth);
@@ -65,6 +68,6 @@ export class CompactionSummaryMessageComponent extends CollapsibleMessageCompone
 			timestampFormat: "date-time-iso",
 			showTimestamp: false,
 		});
-		return framed.length > 0 ? ["", ...framed] : framed;
+		return this.setCachedRender(width, framed.length > 0 ? ["", ...framed] : framed);
 	}
 }
