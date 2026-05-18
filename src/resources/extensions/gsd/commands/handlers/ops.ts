@@ -105,6 +105,11 @@ export async function handleOpsCommand(trimmed: string, ctx: ExtensionCommandCon
     await handleRecover(ctx, projectRoot());
     return true;
   }
+  if (trimmed === "closeout" || trimmed.startsWith("closeout ")) {
+    const { handleCloseout } = await import("../../commands-closeout.js");
+    await handleCloseout(trimmed.replace(/^closeout\s*/, "").trim(), ctx, projectRoot());
+    return true;
+  }
   if (trimmed === "export" || trimmed.startsWith("export ")) {
     await handleExport(trimmed.replace(/^export\s*/, "").trim(), ctx, projectRoot());
     return true;

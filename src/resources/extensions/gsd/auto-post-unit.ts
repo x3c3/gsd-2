@@ -617,6 +617,7 @@ async function runCloseoutGitAction(
           status: gitResult.status,
           error: gitResult.error,
           metadata: {
+            basePath: s.basePath,
             dirty: gitResult.dirty,
             dirtyRepositories: gitResult.dirtyRepositories,
             commitMessage: gitResult.commitMessage,
