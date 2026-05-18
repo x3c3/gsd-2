@@ -1,5 +1,5 @@
 // Project/App: GSD-2
-// File Purpose: E2E gate for headless auto-mode pause exit behavior.
+// File Purpose: E2E gate for headless auto-mode pause and blocked recovery behavior.
 
 import { execFileSync } from "node:child_process";
 import { describe, test } from "node:test";
@@ -33,6 +33,14 @@ function commitPaths(dir: string, paths: string[], message: string): void {
 
 function git(dir: string, args: string[]): void {
 	execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+}
+
+function gitOutput(dir: string, args: string[]): string {
+	return execFileSync("git", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" }).trim();
+}
+
+function nodeOutput(dir: string, args: string[]): string {
+	return execFileSync(process.execPath, args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" }).trim();
 }
 
 function writeRecoveredMilestone(dir: string): void {
@@ -286,6 +294,71 @@ describe("headless auto pause e2e (fake LLM)", () => {
 		assert.ok(
 			notifyMessages.some((message) => /resolve manually and re-run \/gsd auto/i.test(message)),
 			`expected manual resume instruction, got:\n${notifyMessages.join("\n")}`,
+		);
+
+		assert.throws(
+			() => git(project.dir, ["merge", "--no-ff", "--no-edit", "milestone/M001"]),
+			/manual|conflict|Command failed/i,
+			"manual merge should expose the same source conflict the blocked run reported",
+		);
+		writeFileSync(join(project.dir, "src/conflict.js"), "export const value = \"milestone\";\n");
+		commitPaths(project.dir, ["src/conflict.js"], "merge: manually resolve milestone M001");
+		assert.equal(gitOutput(project.dir, ["diff", "--name-only", "--diff-filter=U"]), "");
+
+		const resume = gsdSync(
+			[
+				"headless",
+				"--output-format",
+				"stream-json",
+				"--events",
+				"extension_ui_request,agent_end",
+				"--model",
+				"gsd-fake-model",
+				"--timeout",
+				"45000",
+				"--max-restarts",
+				"0",
+				"auto",
+			],
+			{
+				cwd: project.dir,
+				timeoutMs: 60_000,
+			},
+		);
+
+		const resumeArtifacts = artifactsFor("headless-survivor-merge-conflict-resumed");
+		resumeArtifacts.write("stdout.jsonl", resume.stdout);
+		resumeArtifacts.write("stderr.log", resume.stderr);
+
+		assert.equal(
+			resume.code,
+			0,
+			`expected resume to clean up completed milestone and exit 0, got code=${resume.code} signal=${resume.signal} timedOut=${resume.timedOut}. artifacts: ${resumeArtifacts.dir}`,
+		);
+		assert.ok(!resume.timedOut, "headless survivor merge resume must exit before the harness timeout");
+		assert.ok(!/Timeout after/i.test(resume.stderrClean), `headless should not report timeout:\n${resume.stderrClean}`);
+
+		const resumeEvents = parseJsonEvents(resume.stdoutClean);
+		const resumeNotifyMessages = resumeEvents
+			.filter((event) => event.type === "extension_ui_request" && event.method === "notify")
+			.map((event) => String(event.message ?? ""));
+
+		assert.ok(
+			resumeNotifyMessages.some((message) => /Orphan audit: Deleted merged branch milestone\/M001/i.test(message)),
+			`expected completed milestone branch cleanup notification, got:\n${resumeNotifyMessages.join("\n")}`,
+		);
+		assert.ok(
+			resumeNotifyMessages.some((message) => /Auto-mode stopped .*all milestones complete/i.test(message)),
+			`expected terminal cleanup notification, got:\n${resumeNotifyMessages.join("\n")}`,
+		);
+		assert.ok(
+			!resumeNotifyMessages.some((message) => /Survivor-branch finalization for M001 failed/i.test(message)),
+			`manual resolution rerun should not repeat survivor finalization failure, got:\n${resumeNotifyMessages.join("\n")}`,
+		);
+		assert.equal(gitOutput(project.dir, ["branch", "--list", "milestone/M001"]), "");
+		assert.equal(
+			nodeOutput(project.dir, ["--input-type=module", "-e", "import { value } from './src/conflict.js'; process.stdout.write(value);"]),
+			"milestone",
 		);
 	});
 });

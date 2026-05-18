@@ -833,6 +833,7 @@ export async function bootstrapAutoSession(
     // Catches completed milestones whose teardown (merge + branch delete)
     // was lost due to session ending between completion and teardown.
     // Must run after DB open and before worktree entry.
+    let orphanAuditRecovered = false;
     try {
       const auditResult = auditOrphanedMilestoneBranches(base, getIsolationMode(base));
       for (const msg of auditResult.recovered) {
@@ -842,6 +843,7 @@ export async function bootstrapAutoSession(
         ctx.ui.notify(`Orphan audit: ${msg}`, "warning");
       }
       if (auditResult.recovered.length > 0) {
+        orphanAuditRecovered = true;
         debugLog("orphan-audit", { recovered: auditResult.recovered, warnings: auditResult.warnings });
       }
     } catch (err) {
@@ -883,6 +885,19 @@ export async function bootstrapAutoSession(
     }
 
     let state = await deriveState(base);
+
+    if (
+      process.env.GSD_HEADLESS === "1" &&
+      orphanAuditRecovered &&
+      !state.activeMilestone &&
+      state.phase === "complete"
+    ) {
+      ctx.ui.notify(
+        "Auto-mode stopped (Recovered completed milestone cleanup; all milestones complete).",
+        "info",
+      );
+      return releaseLockAndReturn();
+    }
 
     // Stale worktree state recovery (#654)
     if (
