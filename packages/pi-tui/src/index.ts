@@ -1,4 +1,5 @@
-// Core TUI interfaces and classes
+// Project/App: GSD-2
+// File Purpose: Public exports for the pi-tui package.
 
 // Style primitives
 export {
@@ -46,7 +47,6 @@ export {
 export {
 	decodeKittyPrintable,
 	isKeyRelease,
-	isKeyRepeat,
 	isKittyProtocolActive,
 	Key,
 	type KeyEventType,
