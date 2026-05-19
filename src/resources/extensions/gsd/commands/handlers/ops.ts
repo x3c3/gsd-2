@@ -27,7 +27,7 @@ export async function handleOpsCommand(trimmed: string, ctx: ExtensionCommandCon
     ["plan-slice", "plan"],
     ["execute-task", "execute"],
     ["complete-slice", "complete"],
-    ["validate-milestone", "uat"],
+    ["validate-milestone", "validate-milestone"],
     ["complete-milestone", "complete"],
   ]);
   const aliasPhase = directDispatchAlias.get(trimmed);
@@ -203,7 +203,7 @@ Examples:
   if (trimmed === "dispatch" || trimmed.startsWith("dispatch ")) {
     const phase = trimmed.replace(/^dispatch\s*/, "").trim();
     if (!phase) {
-      ctx.ui.notify("Usage: /gsd dispatch <phase>  (research|plan|execute|complete|reassess|uat|replan)", "warning");
+      ctx.ui.notify("Usage: /gsd dispatch <phase>  (research|plan|execute|complete|validate|reassess|uat|replan)", "warning");
       return true;
     }
     await dispatchDirectPhase(ctx, pi, phase, projectRoot());

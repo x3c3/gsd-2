@@ -212,8 +212,14 @@ async function runValidateMilestonePostCheck(
       "error",
     );
     process.stderr.write(
-      `validate-milestone: pausing — verdict=needs-attention for ${mid}. ` +
-        `Address the attention item, override the verdict, or explicitly park the milestone.\n`,
+      [
+        `validate-milestone: pausing — verdict=needs-attention for ${mid}.`,
+        `Review details with /gsd status.`,
+        `After fixing the issue, run /gsd validate-milestone.`,
+        `To accept the finding, run /gsd verdict pass --rationale "why this is okay".`,
+        `To defer it, run /gsd park ${mid}.`,
+        "",
+      ].join("\n"),
     );
     await persistMilestoneValidationGate(
       "manual-attention",
