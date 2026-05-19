@@ -543,7 +543,7 @@ test("updateProgressWidget full mode keeps footer-owned signals out of auto deck
   assert.ok(installedWidget, "progress widget should be installed");
   const rendered = installedWidget.render(120).join("\n");
 
-  assert.match(rendered, /GSD\s+AUTO/);
+  assert.match(rendered, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+GSD\s+·\s+AUTO\s+·\s+running\s+·\s+executing M004\/S01\/T01/);
   assert.match(rendered, /Budget Tracking/);
   assert.match(rendered, /T01: Add repeat column via idempotent ALTER TABLE/);
   assert.match(rendered, /dashboard/);
@@ -610,8 +610,8 @@ test("updateProgressWidget shows provider-waiting state consistently for auto an
   const autoRendered = renderDashboard(false);
   const nextRendered = renderDashboard(true);
 
-  assert.match(autoRendered, /GSD\s+AUTO/);
-  assert.match(nextRendered, /GSD\s+NEXT/);
+  assert.match(autoRendered, /GSD\s+·\s+AUTO\s+·\s+running\s+·\s+completing M003\/S01/);
+  assert.match(nextRendered, /GSD\s+·\s+NEXT\s+·\s+running\s+·\s+completing M003\/S01/);
   assert.match(autoRendered, /waiting on provider/);
   assert.match(nextRendered, /waiting on provider/);
   assert.match(autoRendered, /completing\s+M003\/S01/);

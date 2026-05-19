@@ -44,6 +44,8 @@ import { logWarning } from "./workflow-logger.js";
 import { formattedShortcutPair } from "./shortcut-defs.js";
 import { readUnitRuntimeRecord, type AutoUnitRuntimeRecord } from "./unit-runtime.js";
 
+const ACTIVE_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
 // ─── UAT Slice Extraction ─────────────────────────────────────────────────────
 
 /**
@@ -689,7 +691,7 @@ export function updateProgressWidget(
   }
 
   ctx.ui.setWidget("gsd-progress", (tui, theme) => {
-    let pulseBright = true;
+    let spinnerIndex = 0;
     let cachedLines: string[] | undefined;
     let cachedWidth: number | undefined;
     let cachedRuntimeRecord: AutoUnitRuntimeRecord | null = null;
@@ -704,11 +706,12 @@ export function updateProgressWidget(
 
     refreshRuntimeRecord();
 
-    const pulseTimer = setInterval(() => {
-      pulseBright = !pulseBright;
+    const spinnerTimer = setInterval(() => {
+      spinnerIndex = (spinnerIndex + 1) % ACTIVE_SPINNER_FRAMES.length;
       cachedLines = undefined;
       tui.requestRender();
-    }, 800);
+    }, 200);
+    spinnerTimer.unref?.();
 
     // Refresh progress cache from disk every 15s so the widget reflects
     // task/slice completion mid-unit. Without this, the progress bar only
@@ -745,9 +748,7 @@ export function updateProgressWidget(
         // ── Line 1: Top bar ───────────────────────────────────────────────
         lines.push(...ui.bar());
 
-        const dot = pulseBright
-          ? theme.fg("accent", GLYPH.statusActive)
-          : theme.fg("dim", GLYPH.statusPending);
+        const spinner = theme.fg("accent", ACTIVE_SPINNER_FRAMES[spinnerIndex]);
         const elapsed = formatAutoElapsed(accessors.getAutoStartTime());
         const modeTag = accessors.isStepMode() ? "NEXT" : "AUTO";
 
@@ -767,7 +768,13 @@ export function updateProgressWidget(
           ? `  ${providerWaitStr}`
           : `  ${providerWaitStr} ${theme.fg("dim", "·")} ${theme.fg(healthColor, healthIcon)} ${theme.fg(healthColor, healthSummary)}`;
 
-        const headerLeft = `${pad}${dot} ${theme.fg("accent", theme.bold("GSD"))}  ${theme.fg("success", modeTag)}${healthStr}`;
+        const unitState = `${unitVerb(unitType)} ${unitId}`;
+        const headerLeft = [
+          `${pad}${spinner} ${theme.fg("accent", theme.bold("GSD"))}`,
+          theme.fg("success", modeTag),
+          theme.fg("success", "running"),
+          theme.fg("text", unitState),
+        ].join(` ${theme.fg("dim", "·")} `) + healthStr;
 
         // ETA in header right, after elapsed
         const eta = estimateTimeRemaining();
@@ -976,7 +983,7 @@ export function updateProgressWidget(
         cachedWidth = undefined;
       },
       dispose() {
-        clearInterval(pulseTimer);
+        clearInterval(spinnerTimer);
         if (progressRefreshTimer) clearInterval(progressRefreshTimer);
       },
     };
