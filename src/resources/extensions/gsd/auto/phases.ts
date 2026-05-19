@@ -79,6 +79,11 @@ import { isSuspiciousGhostCompletion } from "../auto-unit-closeout.js";
 import { decideVerificationRetry, verificationRetryKey } from "./verification-retry-policy.js";
 import { buildPhaseHandoffOutcome, setAutoOutcomeWidget } from "../auto-dashboard.js";
 import { getConsecutiveDispatchBlocker } from "../dispatch-guard.js";
+import {
+  captureRootDirtySnapshot,
+  detectRootWriteLeak,
+  formatRootWriteLeakMessage,
+} from "../root-write-leak-guard.js";
 
 export const STUCK_WINDOW_SIZE = 6;
 
@@ -86,6 +91,12 @@ export const STUCK_WINDOW_SIZE = 6;
 /** Compare two paths for physical identity, tolerating trailing slashes and symlinks. */
 function isSamePathLocal(a: string, b: string): boolean {
   return normalizeWorktreePathForCompare(a) === normalizeWorktreePathForCompare(b);
+}
+
+function isIsolatedWorktreeSession(s: AutoSession): boolean {
+  return Boolean(s.originalBasePath)
+    && Boolean(s.basePath)
+    && !isSamePathLocal(s.originalBasePath, s.basePath);
 }
 
 async function applyVerificationRetryPolicy(
@@ -2127,6 +2138,9 @@ export async function runUnitPhase(
   const unitStartedAt = Date.now();
   s.unitDispatchCount.set(dispatchKey, nextDispatchCount);
   s.currentUnit = { type: unitType, id: unitId, startedAt: unitStartedAt };
+  s.rootWriteBaseline = isIsolatedWorktreeSession(s)
+    ? captureRootDirtySnapshot(s.originalBasePath)
+    : null;
   s.lastGitActionFailure = null;
   s.lastGitActionStatus = null;
   s.lastUnitAgentEndMessages = null;
@@ -2607,6 +2621,7 @@ export async function runFinalize(
     ) {
       s.currentUnit = null;
     }
+    s.rootWriteBaseline = null;
   };
   clearCurrentPhase();
   const preResultGuard = await withTimeout(
@@ -2800,6 +2815,36 @@ export async function runFinalize(
     debugLog("autoLoop", { phase: "exit", reason: "step-wizard" });
     clearFinalizingUnit();
     return { action: "break", reason: "step-wizard" };
+  }
+
+  if (preUnitSnapshot && isIsolatedWorktreeSession(s)) {
+    const leak = detectRootWriteLeak({
+      rootPath: s.originalBasePath,
+      worktreePath: s.basePath,
+      unitType: preUnitSnapshot.type,
+      unitId: preUnitSnapshot.id,
+      before: s.rootWriteBaseline,
+    });
+    s.rootWriteBaseline = null;
+    if (leak) {
+      const message = formatRootWriteLeakMessage(leak);
+      debugLog("autoLoop", {
+        phase: "root-write-leak",
+        unitType: preUnitSnapshot.type,
+        unitId: preUnitSnapshot.id,
+        rootPath: leak.rootPath,
+        worktreePath: leak.worktreePath,
+        files: leak.files.map((file) => ({ path: file.path, status: file.status })),
+      });
+      ctx.ui.notify(message, "error");
+      await deps.stopAuto(ctx, pi, "Root-write leak during isolated auto-mode", {
+        preserveCompletedMilestoneBranch: true,
+      });
+      clearFinalizingUnit();
+      return { action: "break", reason: "root-write-leak" };
+    }
+  } else {
+    s.rootWriteBaseline = null;
   }
 
   if (preUnitSnapshot?.type === "complete-milestone" && s.currentMilestoneId) {

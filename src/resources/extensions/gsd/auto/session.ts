@@ -27,6 +27,7 @@ import type { AutoOrchestrationModule } from "./contracts.js";
 import { resolveWorktreeProjectRoot } from "../worktree-root.js";
 import { normalizeRealPath } from "../paths.js";
 import type { MilestoneScope } from "../workspace.js";
+import type { RootDirtySnapshot } from "../root-write-leak-guard.js";
 
 // ─── Exported Types ──────────────────────────────────────────────────────────
 
@@ -215,6 +216,8 @@ export class AutoSession {
   // ── Isolation degradation ────────────────────────────────────────────
   /** Set to true when worktree creation fails; prevents merge of nonexistent branch. */
   isolationDegraded = false;
+  /** Project-root dirty snapshot captured before an isolated worktree unit runs. */
+  rootWriteBaseline: RootDirtySnapshot | null = null;
 
   // ── Merge guard ──────────────────────────────────────────────────────
   /** Set to true after phases.ts successfully calls mergeAndExit, so that
@@ -376,6 +379,7 @@ export class AutoSession {
     this.lastGitActionFailure = null;
     this.lastGitActionStatus = null;
     this.isolationDegraded = false;
+    this.rootWriteBaseline = null;
     this.milestoneMergedInPhases = false;
     this.milestoneStartShas = new Map();
     this.checkpointSha = null;
