@@ -548,6 +548,40 @@ function withDetachedAutoKeepalive<T>(run: Promise<T>): Promise<T> {
 
 export const _withDetachedAutoKeepaliveForTest = withDetachedAutoKeepalive;
 
+function getValidationBlockedAutoStartMessage(state: GSDState): string | null {
+  if (state.phase !== "blocked") return null;
+  const blockers = state.blockers.filter((blocker) => blocker.trim().length > 0);
+  const validationBlocked = blockers.some((blocker) =>
+    /milestone validation returned needs-(?:attention|remediation)|validation verdict is needs-(?:attention|remediation)/i.test(blocker),
+  );
+  if (!validationBlocked) return null;
+  return [
+    "Auto-mode was not started because the active milestone is blocked by validation.",
+    ...blockers,
+  ].join("\n\n");
+}
+
+export const _getValidationBlockedAutoStartMessageForTest = getValidationBlockedAutoStartMessage;
+
+async function getAutoStartBlockedMessage(base: string): Promise<string | null> {
+  await ensureDbOpen(base);
+  let state = await deriveState(base);
+
+  if (
+    state.activeMilestone &&
+    shouldUseWorktreeIsolation(base) &&
+    !detectWorktreeName(base) &&
+    !isInAutoWorktree(base)
+  ) {
+    const wtPath = getAutoWorktreePath(base, state.activeMilestone.id);
+    if (wtPath && existsSync(wtPath)) {
+      state = await deriveState(wtPath);
+    }
+  }
+
+  return getValidationBlockedAutoStartMessage(state);
+}
+
 export function startAutoDetached(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
@@ -2491,6 +2525,13 @@ export async function startAuto(
   // bootstrap-only path; this call ensures the resume path is also protected.
   if (recoverFailedMigration(base)) {
     ctx.ui.notify("Recovered unfinished migration (.gsd.migrating → .gsd).", "info");
+  }
+
+  const blockedStartMessage = await getAutoStartBlockedMessage(base);
+  if (blockedStartMessage) {
+    ctx.ui.notify(blockedStartMessage, "warning");
+    debugLog("startAuto", { phase: "validation-blocked", base });
+    return;
   }
 
   const freshStartAssessment = await (interruptedAssessment
