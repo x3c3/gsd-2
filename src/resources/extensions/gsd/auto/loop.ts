@@ -896,6 +896,7 @@ export async function autoLoop(
             break;
           }
           if (preDispatchResult.action === "continue") {
+            completeIteration();
             finishTurn("skipped");
             continue;
           }
@@ -917,6 +918,7 @@ export async function autoLoop(
             break;
           }
           if (dispatchResult.action === "continue") {
+            completeIteration();
             finishTurn("skipped");
             continue;
           }
@@ -1043,6 +1045,12 @@ export async function autoLoop(
           break;
         }
         finishTurn("skipped", "execution", dispatchDecision.reason);
+        finishIncompleteIteration({
+          status: "skipped",
+          reason: dispatchDecision.reason,
+          unitType: iterData.unitType,
+          unitId: iterData.unitId,
+        });
         continue;
       }
       dispatchId = dispatchDecision.dispatchId;
@@ -1341,6 +1349,10 @@ export async function autoLoop(
         ctx.ui.notify(cooldownDecision.notifyMessage, "warning");
         await new Promise(resolve => setTimeout(resolve, cooldownDecision.waitMs));
         finishTurn("retry", "timeout", msg);
+        finishIncompleteIteration({
+          status: "retry",
+          reason: "cooldown-retry",
+        });
         continue; // Retry iteration without incrementing consecutiveErrors
       }
 
