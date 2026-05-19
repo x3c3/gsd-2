@@ -255,6 +255,7 @@ export class AutoSession {
   // ── Orchestration seam ───────────────────────────────────────────────────
   orchestration: AutoOrchestrationModule | null = null;
   pendingOrchestrationDispatch: PendingOrchestrationDispatch | null = null;
+  pendingVerificationRetryDispatch: PendingOrchestrationDispatch | null = null;
 
   // ── Loop promise state ──────────────────────────────────────────────────
   // Per-unit resolve function and session-switch guard live at module level
@@ -388,6 +389,7 @@ export class AutoSession {
     // Orchestration seam
     this.orchestration = null;
     this.pendingOrchestrationDispatch = null;
+    this.pendingVerificationRetryDispatch = null;
 
     // Loop promise state lives in auto-loop.ts module scope
   }

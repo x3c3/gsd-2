@@ -1914,6 +1914,18 @@ export function createWiredDispatchAdapter(
             ? "true"
             : "false");
 
+      const pendingRetry = session?.pendingVerificationRetryDispatch;
+      if (session && pendingRetry) {
+        session.pendingVerificationRetryDispatch = null;
+        session.pendingOrchestrationDispatch = pendingRetry;
+        return {
+          unitType: pendingRetry.unitType,
+          unitId: pendingRetry.unitId,
+          reason: "verification-retry",
+          preconditions: [],
+        };
+      }
+
       const action = await resolveDispatch({
         basePath: activeDispatchBasePath,
         mid: active.id,

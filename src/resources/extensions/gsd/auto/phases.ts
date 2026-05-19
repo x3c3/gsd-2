@@ -138,6 +138,23 @@ async function applyVerificationRetryPolicy(
   return null;
 }
 
+function rememberRetryDispatch(
+  s: AutoSession,
+  unit: { type: string; id: string } | null,
+  iterData: IterationData,
+): void {
+  if (!unit) return;
+  s.pendingVerificationRetryDispatch = {
+    unitType: unit.type,
+    unitId: unit.id,
+    prompt: iterData.prompt,
+    pauseAfterUatDispatch: iterData.pauseAfterUatDispatch,
+    state: iterData.state,
+    mid: iterData.mid,
+    midTitle: iterData.midTitle,
+  };
+}
+
 export function shouldDegradeEmptyWorktreeToProjectRoot(
   worktreeClassification: ReturnType<typeof classifyProject>,
   projectRootClassification: ReturnType<typeof classifyProject>,
@@ -1341,12 +1358,38 @@ export async function runDispatch(
     return { action: "continue" };
   }
 
-  deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "dispatch-match", rule: dispatchResult.matchedRule, data: { unitType: dispatchResult.unitType, unitId: dispatchResult.unitId } });
-
   let unitType = dispatchResult.unitType;
   let unitId = dispatchResult.unitId;
   let prompt = dispatchResult.prompt;
-  const pauseAfterUatDispatch = dispatchResult.pauseAfterDispatch ?? false;
+  let pauseAfterUatDispatch = dispatchResult.pauseAfterDispatch ?? false;
+  let dispatchState = state;
+  let dispatchMid = mid;
+  let dispatchMidTitle = midTitle;
+  const pendingRetryDispatch = s.pendingVerificationRetryDispatch;
+  if (pendingRetryDispatch) {
+    unitType = pendingRetryDispatch.unitType;
+    unitId = pendingRetryDispatch.unitId;
+    prompt = pendingRetryDispatch.prompt;
+    pauseAfterUatDispatch = pendingRetryDispatch.pauseAfterUatDispatch;
+    dispatchState = pendingRetryDispatch.state;
+    dispatchMid = pendingRetryDispatch.mid ?? mid;
+    dispatchMidTitle = pendingRetryDispatch.midTitle ?? midTitle;
+    s.pendingVerificationRetryDispatch = null;
+    debugLog("autoLoop", {
+      phase: "dispatch-pending-verification-retry",
+      unitType,
+      unitId,
+    });
+  }
+
+  deps.emitJournalEvent({
+    ts: new Date().toISOString(),
+    flowId: ic.flowId,
+    seq: ic.nextSeq(),
+    eventType: "dispatch-match",
+    rule: pendingRetryDispatch ? "verification-retry" : dispatchResult.matchedRule,
+    data: { unitType, unitId },
+  });
 
   // Resolve hooks and prior-slice gating before health/stuck accounting so
   // those checks run against the final dispatch unit.
@@ -1565,8 +1608,8 @@ export async function runDispatch(
     data: {
       unitType, unitId, prompt, finalPrompt: prompt,
       pauseAfterUatDispatch,
-      state, mid, midTitle,
-      isRetry: false, previousTier: undefined,
+      state: dispatchState, mid: dispatchMid, midTitle: dispatchMidTitle,
+      isRetry: Boolean(pendingRetryDispatch), previousTier: undefined,
       hookModelOverride: preDispatchResult.model,
     },
   };
@@ -2344,6 +2387,12 @@ export async function runUnitPhase(
       unitResult.errorContext?.isTransient &&
       errorCategory === "aborted"
     ) {
+      rememberRetryDispatch(s, { type: unitType, id: unitId }, iterData);
+      writeUnitRuntimeRecord(s.basePath, unitType, unitId, s.currentUnit?.startedAt ?? Date.now(), {
+        phase: "paused",
+        lastProgressAt: Date.now(),
+        lastProgressKind: "unit-aborted-pause",
+      });
       ctx.ui.notify(
         `Unit ${unitType} ${unitId} was aborted by the user. Pausing auto-mode (recoverable).`,
         "warning",
@@ -2619,6 +2668,7 @@ export async function runFinalize(
         return retryPolicyResult;
       }
       // Continue the loop — next iteration will inject the retry context into the prompt.
+      rememberRetryDispatch(s, preUnitSnapshot, iterData);
       debugLog("autoLoop", { phase: "artifact-verification-retry", iteration: ic.iteration });
       clearFinalizingUnit();
       return { action: "continue" };
@@ -2668,6 +2718,7 @@ export async function runFinalize(
           return retryPolicyResult;
         }
         // Continue the loop — next iteration will inject the retry context into the prompt.
+        rememberRetryDispatch(s, preUnitSnapshot, iterData);
         debugLog("autoLoop", { phase: "verification-retry", iteration: ic.iteration });
         clearFinalizingUnit();
         return { action: "continue" };

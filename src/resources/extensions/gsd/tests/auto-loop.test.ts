@@ -981,6 +981,7 @@ function makeLoopSession(overrides?: Partial<Record<string, unknown>>) {
     lastBaselineCharCount: undefined,
     lastBudgetAlertLevel: 0,
     pendingVerificationRetry: null,
+    pendingVerificationRetryDispatch: null,
     pendingCrashRecovery: null,
     verificationRetryFailureHashes: new Map<string, string>(),
     pendingQuickTasks: [],
@@ -1737,6 +1738,87 @@ test("autoLoop consumes pending orchestration dispatch without advancing twice",
   assert.equal(s.pendingOrchestrationDispatch, null, "pending dispatch should be consumed");
 });
 
+test("autoLoop replays artifact retry dispatch before deriving the next unit", async () => {
+  _resetPendingResolve();
+  mock.timers.enable({ apis: ["Date", "setTimeout"], now: 50_000 });
+
+  try {
+    const ctx = makeMockCtx();
+    ctx.ui.setStatus = () => {};
+    ctx.ui.notify = () => {};
+    ctx.sessionManager = { getSessionFile: () => "/tmp/session.json" };
+    const pi = makeMockPi();
+    const stateSnapshot = {
+      phase: "summarizing",
+      activeMilestone: { id: "M004", title: "Milestone 4", status: "active" },
+      activeSlice: { id: "S01", title: "Slice 1" },
+      activeTask: null,
+      registry: [{ id: "M004", status: "active" }],
+      blockers: [],
+    } as any;
+    const s = makeLoopSession({
+      currentMilestoneId: "M004",
+    });
+
+    let resolveDispatchCalls = 0;
+    let preVerificationCalls = 0;
+    const deps = makeMockDeps({
+      deriveState: async () => stateSnapshot,
+      resolveDispatch: async () => {
+        resolveDispatchCalls++;
+        return resolveDispatchCalls === 1
+          ? {
+              action: "dispatch" as const,
+              unitType: "complete-slice",
+              unitId: "M004/S01",
+              prompt: "complete slice prompt",
+            }
+          : {
+              action: "dispatch" as const,
+              unitType: "complete-milestone",
+              unitId: "M004",
+              prompt: "complete milestone prompt",
+            };
+      },
+      postUnitPreVerification: async () => {
+        preVerificationCalls++;
+        if (preVerificationCalls === 1) {
+          s.pendingVerificationRetry = {
+            unitId: "M004/S01",
+            failureContext: "slice summary exists but did not satisfy the completion contract",
+            attempt: 1,
+          };
+          return "retry" as const;
+        }
+        return "continue" as const;
+      },
+      postUnitPostVerification: async () => {
+        deps.callLog.push("postUnitPostVerification");
+        if (preVerificationCalls >= 2) s.active = false;
+        return "continue" as const;
+      },
+    });
+
+    const loopPromise = autoLoop(ctx, pi, s, deps);
+
+    await waitForMicrotasks(() => pi.calls.length === 1, "initial complete-slice dispatch");
+    resolveAgentEnd(makeEvent());
+    await drainMicrotasks(100);
+    mock.timers.tick(30_000);
+    await waitForMicrotasks(() => pi.calls.length === 2, "same-unit retry dispatch");
+    resolveAgentEnd(makeEvent());
+    await loopPromise;
+
+    const secondPrompt = (pi.calls[1] as any[])[0].content;
+    assert.match(secondPrompt, /VERIFICATION FAILED/);
+    assert.match(secondPrompt, /complete slice prompt/);
+    assert.doesNotMatch(secondPrompt, /complete milestone prompt/);
+    assert.equal(s.pendingVerificationRetryDispatch, null);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("autoLoop journals post-unit finalize stop after completed unit", async () => {
   _resetPendingResolve();
 
@@ -2018,12 +2100,10 @@ test("autoLoop handles verification retry by continuing loop", async (t) => {
 
     await loopPromise;
 
-    // Verify deriveState was called twice (two iterations)
+    // The retry cycle still completes and may re-derive after the pinned retry
+    // finishes, but it must not skip the failed unit's verification pass.
     const deriveCount = deps.callLog.filter((c) => c === "deriveState").length;
-    assert.ok(
-      deriveCount >= 2,
-      `deriveState should be called at least 2 times (got ${deriveCount})`,
-    );
+    assert.ok(deriveCount >= 1, `deriveState should be called at least once (got ${deriveCount})`);
 
     // Verify verification was called twice
     assert.equal(
@@ -2957,6 +3037,86 @@ test("runUnitPhase pauses transient aborted cancellations instead of hard-stoppi
   assert.equal((result as any).reason, "unit-aborted-pause");
   assert.equal(deps.callLog.includes("pauseAuto"), true);
   assert.equal(deps.callLog.includes("stopAuto"), false);
+});
+
+test("runUnitPhase remembers aborted milestone closeout for same-unit resume", async (t) => {
+  _resetPendingResolve();
+
+  const basePath = mkdtempSync(join(tmpdir(), "gsd-aborted-closeout-"));
+  t.after(() => {
+    rmSync(basePath, { recursive: true, force: true });
+  });
+
+  const ctx = {
+    ...makeMockCtx(),
+    ui: {
+      notify: () => {},
+      setStatus: () => {},
+      setWorkingMessage: () => {},
+    },
+    sessionManager: {
+      getEntries: () => [],
+    },
+    modelRegistry: {
+      getProviderAuthMode: () => undefined,
+      isProviderRequestReady: () => true,
+    },
+  } as any;
+  const pi = {
+    ...makeMockPi(),
+    sendMessage: () => {
+      queueMicrotask(() => resolveAgentEndCancelled({
+        message: "Operation aborted",
+        category: "aborted",
+        isTransient: true,
+      }));
+    },
+  } as any;
+  const s = makeLoopSession({
+    basePath,
+    canonicalProjectRoot: basePath,
+    originalBasePath: basePath,
+    currentMilestoneId: "M004",
+  });
+  const deps = makeMockDeps();
+  let seq = 0;
+
+  const result = await runUnitPhase(
+    { ctx, pi, s, deps, prefs: undefined, iteration: 1, flowId: "flow-aborted-closeout", nextSeq: () => ++seq },
+    {
+      unitType: "complete-milestone",
+      unitId: "M004",
+      prompt: "complete milestone prompt",
+      finalPrompt: "complete milestone prompt",
+      pauseAfterUatDispatch: false,
+      state: {
+        phase: "completing-milestone",
+        activeMilestone: { id: "M004", title: "Milestone 4" },
+        activeSlice: null,
+        activeTask: null,
+        registry: [{ id: "M004", title: "Milestone 4", status: "active" }],
+        recentDecisions: [],
+        blockers: [],
+        nextAction: "",
+        progress: { milestones: { done: 0, total: 1 } },
+      } as any,
+      mid: "M004",
+      midTitle: "Milestone 4",
+      isRetry: false,
+      previousTier: undefined,
+    },
+    { recentUnits: [{ key: "complete-milestone/M004" }], stuckRecoveryAttempts: 0, consecutiveFinalizeTimeouts: 0 },
+  );
+
+  const runtime = readUnitRuntimeRecord(basePath, "complete-milestone", "M004");
+
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "unit-aborted-pause");
+  assert.equal(s.pendingVerificationRetryDispatch?.unitType, "complete-milestone");
+  assert.equal(s.pendingVerificationRetryDispatch?.unitId, "M004");
+  assert.equal(s.pendingVerificationRetryDispatch?.prompt, "complete milestone prompt");
+  assert.equal(runtime?.phase, "paused");
+  assert.equal(runtime?.lastProgressKind, "unit-aborted-pause");
 });
 
 test("runUnitPhase pauses ghost completions before closeout and finalize side effects", async (t) => {

@@ -1142,6 +1142,37 @@ test("wired DispatchAdapter forwards constructor session when advance input omit
   }
 });
 
+test("wired DispatchAdapter replays pending verification retry dispatch", async () => {
+  const stateSnapshot = makeState();
+  const ctx = { model: {}, modelRegistry: { getAll: () => [] } } as any;
+  const pi = { getActiveTools: () => [] } as any;
+  const session = {
+    basePath: "/tmp/worktree-fixture",
+    pendingOrchestrationDispatch: null,
+    pendingVerificationRetryDispatch: {
+      unitType: "complete-slice",
+      unitId: "M004/S01",
+      prompt: "repair slice closeout",
+      pauseAfterUatDispatch: false,
+      state: stateSnapshot,
+      mid: "M004",
+      midTitle: "Milestone 4",
+    },
+  } as any;
+  const adapter = createWiredDispatchAdapter(ctx, pi, "/tmp/project-fixture", session);
+
+  const result = await adapter.decideNextUnit({ stateSnapshot });
+
+  assert.ok(result);
+  if (!("unitType" in result)) assert.fail("expected dispatch decision");
+  assert.equal(result.unitType, "complete-slice");
+  assert.equal(result.unitId, "M004/S01");
+  assert.equal(result.reason, "verification-retry");
+  assert.equal(session.pendingVerificationRetryDispatch, null);
+  assert.equal(session.pendingOrchestrationDispatch?.prompt, "repair slice closeout");
+  assert.equal(session.pendingOrchestrationDispatch?.state, stateSnapshot);
+});
+
 test("wired DispatchAdapter preserves stop reason as a blocked decision", async () => {
   const stateSnapshot = makeState();
   const stopRule: UnifiedRule = {
