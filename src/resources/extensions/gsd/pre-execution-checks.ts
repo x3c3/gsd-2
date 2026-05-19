@@ -17,7 +17,7 @@
  *   - No AST parsers — interface parsing is heuristic (regex on code blocks)
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -58,7 +58,32 @@ function inputExistsOnDisk(
     if (existsSync(resolve(context.canonicalProjectRoot, normalizedFile))) return true;
   }
 
-  return (context?.additionalRoots ?? []).some((root) => existsSync(resolve(root, normalizedFile)));
+  if ((context?.additionalRoots ?? []).some((root) => existsSync(resolve(root, normalizedFile)))) {
+    return true;
+  }
+
+  // Monorepo fallback: when plans emit paths relative to a sub-project
+  // root (e.g. src/...) while basePath points at the workspace root, accept
+  // a unique immediate-subdirectory match (e.g. frontend/src/...).
+  if (normalizedFile.startsWith("/") || normalizedFile.startsWith("../")) {
+    return false;
+  }
+
+  let matches = 0;
+  try {
+    for (const entry of readdirSync(basePath, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === ".git" || entry.name === ".gsd" || entry.name === "node_modules") continue;
+      if (existsSync(resolve(basePath, entry.name, normalizedFile))) {
+        matches += 1;
+        if (matches > 1) return false;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return matches === 1;
 }
 
 export function checkVerificationCommands(tasks: TaskRow[]): PreExecutionCheckJSON[] {
